@@ -28,6 +28,8 @@ const AI_HZ = 15;       // décisions bots à 15 Hz, mouvement physique conserv�
 const REMOTE_PLAYER_RADIUS = 3400; // couvre largement 2x la portée de l'arme la plus longue.
 const SHOT_REPLICATION_RADIUS = 3400;
 const MAX_SNAPSHOT_BACKLOG = 192 * 1024;
+const MAX_BROADCAST_BACKLOG = 384 * 1024;
+const ALLOWED_ORIGINS = new Set(['https://nitarii.github.io', ...String(process.env.PROJECTPC_ALLOWED_ORIGINS||'').split(',').map(x=>x.trim()).filter(Boolean)]);
 const ROOT_DIR = path.resolve(__dirname, '../..');
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
 const DATA_DIR = path.join(ROOT_DIR, 'data');
@@ -230,6 +232,12 @@ const wss = new WebSocketServer({ noServer:true, maxPayload:32 * 1024 });
 server.on('upgrade', (req, socket, head) => {
   const pathname = new URL(req.url || '/', 'http://localhost').pathname;
   if (pathname !== '/ws') return socket.destroy();
+  const origin = req.headers.origin;
+  if (origin) {
+    let accepted = ALLOWED_ORIGINS.has(origin);
+    try { const parsed = new URL(origin); accepted ||= (parsed.host === req.headers.host && ['https:','http:'].includes(parsed.protocol)); } catch {}
+    if (!accepted) { socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return; }
+  }
   wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
 });
 
@@ -240,12 +248,16 @@ const wsHeartbeat=setInterval(()=>{const now=Date.now();for(const ws of clients.
 function send(ws, type, payload = {}) {
   if (ws?.readyState !== WebSocket.OPEN) return false;
   const data=JSON.stringify({ type, ...payload });
-  perfStats.wsBytesOut+=Buffer.byteLength(data);
-  return ws.send(data);
+  const accepted=ws.send(data);
+  if(accepted)perfStats.wsBytesOut+=Buffer.byteLength(data);
+  return accepted;
 }
 function broadcast(type, payload = {}) {
   const data = JSON.stringify({ type, ...payload });
-  for (const ws of clients.keys()) if (ws.readyState === WebSocket.OPEN){perfStats.wsBytesOut+=Buffer.byteLength(data);ws.send(data);}
+  const bytes=Buffer.byteLength(data);
+  for (const ws of clients.keys()) if(ws.readyState===WebSocket.OPEN && ws.bufferedAmount<=MAX_BROADCAST_BACKLOG){
+    if(ws.send(data))perfStats.wsBytesOut+=bytes;
+  }
 }
 function teamCounts() {
   const out = {};
@@ -748,7 +760,7 @@ wss.on('connection', ws => {
   ws.on('message', raw => {
     const rateNow=Date.now();
     if(!ws._rateWindowAt||rateNow-ws._rateWindowAt>=1000){ws._rateWindowAt=rateNow;ws._rateCount=0;}
-    if(++ws._rateCount>220)return ws.close(4008,'message rate exceeded');
+    if(++ws._rateCount>120)return ws.close(4008,'message rate exceeded');
     let msg;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
     if (!msg || typeof msg.type !== 'string') return;
@@ -780,6 +792,11 @@ wss.on('connection', ws => {
     const p = clients.get(ws); if (!p) return;
     const now = Date.now(); p.lastInputAt = now;
     switch (msg.type) {
+      case 'net_ping': {
+        const nonce = Number(msg.nonce);
+        if(Number.isSafeInteger(nonce)&&nonce>=0&&nonce<1000000000)send(ws,'net_pong',{nonce});
+        break;
+      }
       case 'input': {
         if (msg.keys && typeof msg.keys === 'object') {
           p.input.up=!!msg.keys.up; p.input.down=!!msg.keys.down; p.input.left=!!msg.keys.left; p.input.right=!!msg.keys.right; p.input.sprint=!!msg.keys.sprint;
@@ -1773,7 +1790,8 @@ function sendSnapshotTo(ws,viewer,now){
   const visibleCrates=supplyCrates.filter(c=>c.teamId===viewer.teamId||Math.hypot(c.x-viewer.x,c.y-viewer.y)<1600).map(c=>({id:c.id,type:c.type,teamId:c.teamId,x:c.x,y:c.y,radius:c.radius,remainingMs:Math.max(0,c.expiresAt-now)}));
   const visibleVehicles=vehicles.filter(v=>viewer.vehicleId===v.id||Math.hypot(v.x-viewer.x,v.y-viewer.y)<2800).map(v=>publicVehicleForViewer(v,viewer,now));
   const includeMeta=now>=(viewer.netNextMetaAt||0);if(includeMeta)viewer.netNextMetaAt=now+200;
-  send(ws,'snapshot',{serverTime:now,players:visiblePlayers,remotePlayers,effects:newEffects,grenades:visibleGrenades,rockets:visibleRockets,mines:visibleMines,vehicles:visibleVehicles,crates:visibleCrates,match:includeMeta?matchPublicCached(now):undefined,radar:includeMeta?radarStateFor(viewer,now):undefined});
+  const accepted=send(ws,'snapshot',{serverTime:now,players:visiblePlayers,remotePlayers,effects:newEffects,grenades:visibleGrenades,rockets:visibleRockets,mines:visibleMines,vehicles:visibleVehicles,crates:visibleCrates,match:includeMeta?matchPublicCached(now):undefined,radar:includeMeta?radarStateFor(viewer,now):undefined});
+  if(!accepted){perfStats.snapshotsSkipped++;return false;}
   viewer.netEventCursor=eventCursor;perfStats.snapshotsSent++;return true;
 }
 function distancePointToShot(px,py,s){
@@ -2505,15 +2523,15 @@ const stopMainLoop=startFixedLoop({
   }
 });
 
-setInterval(()=>{
+const leaderboardTimer=setInterval(()=>{
   const list=[...players.values()].map(p=>({id:p.id,nickname:p.nickname,isBot:p.isBot,teamId:p.teamId,kills:p.matchKills||0,assists:p.matchAssists||0,deaths:p.matchDeaths||0,level:playerLevel(p),moneyNet:p.matchMoneyNet||0,godMode:!!p.godMode,squadId:p.squadId||null})).sort((a,b)=>b.moneyNet-a.moneyNet||b.kills-a.kills||b.assists-a.assists||a.deaths-b.deaths);
   broadcast('leaderboard',{players:list,match:matchPublic(Date.now())});
-},1800);
+},1800);leaderboardTimer.unref?.();
 
 server.listen(PORT,HOST,()=>{
   console.log('');console.log('============================================================');console.log(' ProjectPC v2.6 - POINT CONTROL');
   console.log(` Local : http://localhost:${PORT}`);console.log(` Santé : http://localhost:${PORT}/health`);console.log(' Tunnel: cloudflared tunnel --url http://localhost:'+PORT);
   console.log(` Carte : ${MAP.width} x ${MAP.height} (${MAP.obstacles.length} obstacles)`);console.log(` Équipes: ${TEAM_TARGET_SIZE} combattants par équipe · jusqu’à ${MAX_HUMANS_PER_TEAM} joueurs humains + ${PILOTS_PER_TEAM} navettes`);console.log('============================================================');console.log('');
 });
-function shutdown(){try{stopMainLoop?.();clearInterval(wsHeartbeat);}catch{}profileStore.flushSync(profiles);process.exit(0);}
+function shutdown(){try{stopMainLoop?.();clearInterval(wsHeartbeat);clearInterval(leaderboardTimer);}catch{}profileStore.flushSync(profiles);process.exit(0);}
 process.on('SIGINT',shutdown);process.on('SIGTERM',shutdown);
