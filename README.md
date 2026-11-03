@@ -206,3 +206,7 @@ Le jeu utilise désormais quatre fenêtres de menu séparées : **Inventaire/Ach
 Avant publication : `npm run verify` (simulation et tests réseau). Le déploiement GitHub Pages exécute désormais ces tests automatiquement.
 
 [Revue technique détaillée, composant par composant](docs/TECHNICAL_REVIEW_2.7.md).
+
+## Jouer en local (Windows)
+
+Dans le dossier du jeu, double-clique sur **`START_LOCAL.bat`**. Le lanceur vérifie Node.js, démarre le serveur sur `http://127.0.0.1:8080/` et ouvre automatiquement cette adresse dès que le serveur répond. Il n'utilise pas Cloudflare. Garde la console ouverte pendant la partie ; le code administrateur y est affiché. En cas de message « Node.js introuvable », installer la version LTS depuis https://nodejs.org/ .
