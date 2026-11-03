@@ -31,6 +31,7 @@ let latestLeaderboard = [];
 let scoreboardHeld = false;
 let tacticalMapOpen = false;
 let pauseWindow = 'inventory';
+let lastNetPingAt = 0, nextNetworkUiAt = 0, netPingNonce = 0, netPingPending = null, serverRttMs = null;
 let tacticalMapView = { zoom:1, cx:0, cy:0, dragging:false, pointerId:null, startX:0, startY:0, startCx:0, startCy:0 };
 let connected = false;
 let snapshots = new Map();
@@ -285,7 +286,7 @@ function connect() {
   ws.addEventListener('open', () => ws.send(JSON.stringify({ type:'hello', token:getToken(), nickname, teamId:selectedTeam })));
   ws.addEventListener('message', e => { let msg; try { msg = JSON.parse(e.data); } catch { return; } onMessage(msg); });
   ws.addEventListener('close', () => {
-    connected = false; mouse.down = false; mouse.aiming = false; keys={up:false,down:false,left:false,right:false,sprint:false};
+    connected = false; netPingPending=null;serverRttMs=null; mouse.down = false; mouse.aiming = false; keys={up:false,down:false,left:false,right:false,sprint:false};
     ui.connection.textContent = '● déconnecté'; ui.connection.style.color = '#ff6570';
     ui.menuStatus.textContent = 'Connexion perdue. Tu peux rejoindre à nouveau.';
     ui.playBtn.disabled = false; ui.playBtn.textContent = isStaticHosting?'REJOINDRE LA PARTIE':'REJOINDRE LE SERVEUR';
@@ -302,6 +303,12 @@ function onMessage(msg) {
     draftLoadout={...(profile?.loadout||{})};
     connected=true; resetTacticalMapView(); ui.menu.classList.remove('active'); ui.hud.classList.remove('hidden');
     ui.connection.textContent='● connecté'; ui.connection.style.color=''; updateProfileUi(); updateMatchUi(); renderAdminPanel(); renderSquadPanel();
+  } else if(msg.type==='net_pong') {
+    if(netPingPending && msg.nonce===netPingPending.nonce){
+      const measured=performance.now()-netPingPending.at;
+      serverRttMs=serverRttMs==null?measured:serverRttMs*.65+measured*.35;
+      netPingPending=null;
+    }
   } else if (msg.type === 'snapshot') {
     const receivedAt=performance.now(),packetPlayers=[...(msg.players||[]),...(msg.remotePlayers||[]).map(decodeRemotePlayer)];
     for (const p of packetPlayers) {
@@ -480,9 +487,41 @@ function setPauseWindow(name){
   if(name==='admin'&&ui.adminMenuTab?.classList.contains('hidden'))name='inventory';pauseWindow=name;
   document.querySelectorAll('[data-menu-panel]').forEach(el=>el.classList.toggle('active',el.dataset.menuPanel===name));
   document.querySelectorAll('[data-menu-window]').forEach(el=>el.classList.toggle('active',el.dataset.menuWindow===name));
+  const position=menuWindowPositions.get(name+'Window');
+  if(position&&innerWidth>900){const el=ui[name+'Window'];el.style.left=Math.min(position.x,innerWidth-250)+'px';el.style.top=Math.min(position.y,innerHeight-100)+'px';el.style.transform='none';}
   if(name==='inventory')renderLoadout();else if(name==='team'){refreshTeamPicker();renderSquadPanel();}else if(name==='admin')renderAdminPanel();
 }
 document.querySelectorAll('[data-menu-window]').forEach(btn=>btn.addEventListener('click',()=>setPauseWindow(btn.dataset.menuWindow)));
+// Each panel is a separate window, draggable on desktop.
+const menuWindowPositions=new Map();
+for(const panel of document.querySelectorAll('.pauseWindow')){
+  panel.querySelector('.windowClose')?.addEventListener('click',()=>closePauseMenu());
+  const grip=panel.querySelector('[data-window-drag]');
+  grip?.addEventListener('pointerdown',e=>{
+    if(e.button!==0||e.target.closest('button')||innerWidth<=900)return;
+    const bounds=panel.getBoundingClientRect(),originX=e.clientX,originY=e.clientY;
+    const baseLeft=bounds.left,baseTop=bounds.top;
+    const move=ev=>{
+      const x=Math.max(205,Math.min(innerWidth-bounds.width-10,baseLeft+ev.clientX-originX));
+      const y=Math.max(8,Math.min(innerHeight-75,baseTop+ev.clientY-originY));
+      panel.style.left=x+'px';panel.style.top=y+'px';panel.style.transform='none';
+      menuWindowPositions.set(panel.id,{x,y});
+    };
+    const stop=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',stop);window.removeEventListener('pointercancel',stop);};
+    window.addEventListener('pointermove',move);window.addEventListener('pointerup',stop);window.addEventListener('pointercancel',stop);
+  });
+}
+function updateNetworkDiagnostics(now=performance.now()){
+  if(now<nextNetworkUiAt)return;nextNetworkUiAt=now+500;
+  if(!connected||!ws||ws.readyState!==WebSocket.OPEN){if(ui.networkStatus)ui.networkStatus.textContent='Hors connexion';return;}
+  if(now-lastNetPingAt>3000 && (!netPingPending||now-netPingPending.at>9000)){
+    lastNetPingAt=now;netPingPending={nonce:++netPingNonce,at:now};
+    if(!send({type:'net_ping',nonce:netPingNonce}))netPingPending=null;
+  }
+  if(ui.networkStatus){const rtt=serverRttMs==null?'mesure en cours':Math.round(serverRttMs)+' ms';
+    ui.networkStatus.textContent=`RTT ${rtt} · envoi en attente : ${Math.round(ws.bufferedAmount/1024)} Ko`;
+  }
+}
 function pauseOpen(){return ui.pauseMenu.classList.contains('active');}
 function menuControlsBlocked(){return pauseOpen()||ui.menu.classList.contains('active');}
 function actionControlsBlocked(){return menuControlsBlocked()||tacticalMapOpen;}
@@ -1074,6 +1113,6 @@ let last=performance.now();function frame(t){
     else if(frameMsEma<15&&renderQuality<1){if(!qualityGoodSince)qualityGoodSince=t;if(t-qualityGoodSince>9000){renderQuality=Math.min(1,renderQuality+.05);qualityGoodSince=t;resize();}}
     else qualityGoodSince=0;
   }
-  update(dt);render();requestAnimationFrame(frame);
+  updateNetworkDiagnostics(t);update(dt);render();requestAnimationFrame(frame);
 }requestAnimationFrame(frame);
 })();
