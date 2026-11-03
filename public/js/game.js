@@ -283,7 +283,7 @@ function connect() {
   ui.playBtn.disabled = true;
   ui.menuStatus.textContent = 'Connexion au serveur…';
   ws = new WebSocket(endpoint);
-  ws.addEventListener('open', () => ws.send(JSON.stringify({ type:'hello', token:getToken(), nickname, teamId:selectedTeam })));
+  ws.addEventListener('open', () => ws.send(JSON.stringify({ type:'hello', token:getToken(), nickname, teamId:selectedTeam, adminToken:ui.adminToken?.value||'' })));
   ws.addEventListener('message', e => { let msg; try { msg = JSON.parse(e.data); } catch { return; } onMessage(msg); });
   ws.addEventListener('close', () => {
     connected = false; netPingPending=null;serverRttMs=null; mouse.down = false; mouse.aiming = false; keys={up:false,down:false,left:false,right:false,sprint:false};
