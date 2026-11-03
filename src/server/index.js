@@ -211,7 +211,7 @@ const server = http.createServer((req, res) => {
   if (!['GET','HEAD'].includes(req.method || 'GET')) { res.writeHead(405, {'allow':'GET, HEAD'}); return res.end('Method not allowed'); }
   if (urlPath === '/health') {
     res.writeHead(200, { 'content-type':'application/json; charset=utf-8', 'cache-control':'no-store' });
-    return res.end(JSON.stringify({ ok:true, version:'2.7.0', humans:clients.size, players:players.size, uptime:Math.round(process.uptime()), map:{ width:MAP.width, height:MAP.height }, teams:teamCounts(), perf:{...perfStats} }));
+    return res.end(JSON.stringify({ ok:true, version:'2.7.1', humans:clients.size, players:players.size, uptime:Math.round(process.uptime()), map:{ width:MAP.width, height:MAP.height }, teams:teamCounts(), perf:{...perfStats} }));
   }
   let relative = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
   const publicRoot = path.resolve(PUBLIC_DIR);
@@ -2502,7 +2502,7 @@ function runGeometrySelfTests(){
     const magFx=effects.slice(beforeEffects).find(e=>e.type==='mag'&&e.weaponId===wid);assert(magFx,`No magazine drop event for ${wid}`);assert(rp.reloadingUntil>ffNow+7000,`Reload duration missing for ${wid}`);
   }
 
-  console.log('ProjectPC v2.7 self-test: OK (murs, hitbox, arsenal, tracers, tir allié, outils, véhicules, bases, soins, réanimation, économie, zone de guerre, point de contrôle, navigation).');
+  console.log('ProjectPC v2.7.1 self-test: OK (murs, hitbox, arsenal, tracers, tir allié, outils, véhicules, bases, soins, réanimation, économie, zone de guerre, point de contrôle, navigation).');
 }
 if(process.env.PROJECTPC_VERIFY_GEOMETRY==='1'||process.env.ISOFRONT_VERIFY_GEOMETRY==='1'){runGeometrySelfTests();if(process.env.PROJECTPC_VERIFY_ONLY==='1')process.exit(0);}
 
@@ -2547,7 +2547,7 @@ const leaderboardTimer=setInterval(()=>{
 },1800);leaderboardTimer.unref?.();
 
 server.listen(PORT,HOST,()=>{
-  console.log('');console.log('============================================================');console.log(' ProjectPC v2.7 - POINT CONTROL');
+  console.log('');console.log('============================================================');console.log(' ProjectPC v2.7.1 - POINT CONTROL');
   console.log(' Code administrateur (privé, ne jamais partager) : '+ADMIN_TOKEN);
   console.log(` Local : http://localhost:${PORT}`);console.log(` Santé : http://localhost:${PORT}/health`);console.log(' Tunnel: cloudflared tunnel --url http://localhost:'+PORT);
   console.log(` Carte : ${MAP.width} x ${MAP.height} (${MAP.obstacles.length} obstacles)`);console.log(` Équipes: ${TEAM_TARGET_SIZE} combattants par équipe · jusqu’à ${MAX_HUMANS_PER_TEAM} joueurs humains + ${PILOTS_PER_TEAM} navettes`);console.log('============================================================');console.log('');
