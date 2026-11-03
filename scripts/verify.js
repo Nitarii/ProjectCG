@@ -13,6 +13,7 @@ const checks = [
   ['--check', 'src/server/core/fixed-loop.js'],
   ['--check', 'src/server/persistence/profile-store.js'],
   ['--check', 'scripts/stress-local.js'],
+  ['--check', 'scripts/test-network.js'],
   ['--check', 'public/js/game.js'],
 ];
 for (const args of checks) {
@@ -37,4 +38,6 @@ try {
   else if (fs.existsSync(profilePath)) fs.unlinkSync(profilePath);
 }
 if (status !== 0) process.exit(status);
+const net = spawnSync(process.execPath, ['scripts/test-network.js'], {cwd:root,stdio:'inherit'});
+if(net.status !== 0)process.exit(net.status||1);
 console.log('ProjectPC verify: OK');
