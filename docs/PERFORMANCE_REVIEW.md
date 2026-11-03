@@ -167,7 +167,7 @@ Par ordre d'impact potentiel :
 
 1. vrai protocole snapshot binaire ou delta-compressé avec ACK de baseline ;
 2. worker/OffscreenCanvas pour une partie de la carte/fog si le client web reste la cible finale ;
-3. séparation du gros fichier serveur en domaines `ai/`, `combat/`, `vehicles/`, `match/` avec tests unitaires dédiés ;
+3. séparation du gros fichier serveur en domaines `bots/`, `combat/`, `vehicles/`, `match/` avec tests unitaires dédiés ;
 4. métriques Prometheus/CSV pour stress tests longs ;
 5. passage d'un Quick Tunnel à un Named Tunnel ou hébergement VPS lorsqu'il y aura des joueurs réguliers ;
 6. serveur de partie par processus/worker si plusieurs matchs doivent tourner sur la même machine.
