@@ -14,6 +14,7 @@ class SimpleWebSocket extends EventEmitter {
     this.socket = socket;
     this.readyState = SimpleWebSocket.OPEN;
     this.maxPayload = maxPayload;
+    this.maxBufferedAmount = 768 * 1024;
     this.buffer = Buffer.alloc(0);
     this.fragmentOpcode = 0;
     this.fragments = [];
@@ -34,12 +35,13 @@ class SimpleWebSocket extends EventEmitter {
   send(data) {
     if (this.readyState !== SimpleWebSocket.OPEN) return false;
     const payload = Buffer.isBuffer(data) ? data : Buffer.from(String(data));
-    return this.socket.write(makeFrame(0x1, payload));
+    if (this.bufferedAmount > this.maxBufferedAmount) { this.close(1013, 'slow receiver'); return false; }
+    try { this.socket.write(makeFrame(0x1, payload)); return true; } catch { this.socket.destroy(); return false; }
   }
 
   ping(payload = Buffer.alloc(0)) {
     if (this.readyState !== SimpleWebSocket.OPEN) return false;
-    try { return this.socket.write(makeFrame(0x9, Buffer.isBuffer(payload) ? payload.subarray(0,125) : Buffer.from(String(payload)).subarray(0,125))); } catch { return false; }
+    try { this.socket.write(makeFrame(0x9, Buffer.isBuffer(payload) ? payload.subarray(0,125) : Buffer.from(String(payload)).subarray(0,125))); return true; } catch { return false; }
   }
 
   close(code = 1000, reason = '') {
@@ -60,7 +62,7 @@ class SimpleWebSocket extends EventEmitter {
   }
 
   _onData(chunk) {
-    if (!chunk?.length || this.readyState === SimpleWebSocket.CLOSED) return;
+    if (!chunk?.length || this.readyState !== SimpleWebSocket.OPEN) return;
     this.buffer = this.buffer.length ? Buffer.concat([this.buffer, chunk]) : chunk;
     while (true) {
       const parsed = parseFrame(this.buffer, this.maxPayload);
@@ -75,6 +77,7 @@ class SimpleWebSocket extends EventEmitter {
   }
 
   _handleFrame(frame) {
+    if (this.readyState !== SimpleWebSocket.OPEN) return;
     const { fin, opcode, payload } = frame;
     if (opcode === 0x8) {
       if (this.readyState === SimpleWebSocket.OPEN) {
@@ -104,6 +107,8 @@ class SimpleWebSocket extends EventEmitter {
     }
 
     if (opcode !== 0x1 && opcode !== 0x2) return this.close(1002, 'unsupported opcode');
+    if (opcode === 0x2) return this.close(1003, 'binary messages not supported');
+    if (this.fragmentOpcode) return this.close(1002, 'fragment already in progress');
     if (!fin) {
       this.fragmentOpcode = opcode;
       this.fragments = [payload];
@@ -125,7 +130,8 @@ class WebSocketServer extends EventEmitter {
     const connection = String(req.headers.connection || '').toLowerCase();
     const key = req.headers['sec-websocket-key'];
     const version = req.headers['sec-websocket-version'];
-    if (upgrade !== 'websocket' || !connection.includes('upgrade') || !key || version !== '13') {
+    const keyBuffer = typeof key === 'string' && /^[A-Za-z0-9+/]{22}==$/.test(key) ? Buffer.from(key, 'base64') : null;
+    if (upgrade !== 'websocket' || !connection.split(',').some(x=>x.trim()==='upgrade') || !keyBuffer || keyBuffer.length !== 16 || version !== '13') {
       socket.write('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
       return socket.destroy();
     }
@@ -169,6 +175,8 @@ function parseFrame(buffer, maxPayload) {
   const opcode = b0 & 0x0F;
   const masked = !!(b1 & 0x80);
   if (rsv) return { error:'RSV unsupported', bytes:buffer.length };
+  if ((opcode >= 0x8 && (!fin || (b1 & 0x7f) > 125)) || [0x3,0x4,0x5,0x6,0x7,0xB,0xC,0xD,0xE,0xF].includes(opcode))
+    return { error:'invalid control frame or opcode', bytes:buffer.length };
   if (!masked) return { error:'client frames must be masked', bytes:buffer.length };
   let len = b1 & 0x7F;
   let offset = 2;
