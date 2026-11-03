@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="theme-color" content="#101318" />
+  <title>ProjectPC — Point Control</title>
+  <link rel="stylesheet" href="./css/styles.css" />
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="flashOverlay" class="blindFlash"></div>
+
+  <div id="menu" class="overlay active">
+    <section class="panel hero">
+      <div class="eyebrow">POINT CONTROL · 3 ÉQUIPES</div>
+      <h1>PROJECT<span>PC</span></h1>
+      <p>Shooter tactique isométrique. Profil local gratuit, sans compte ni e-mail. Choisis ton équipe puis rejoins la partie.</p>
+      <label>Pseudo</label>
+      <input id="nickname" maxlength="18" autocomplete="nickname" placeholder="Ton pseudo" />
+
+      <label class="teamLabel">Équipe</label>
+      <div id="teamPicker" class="teamPicker">
+        <button class="teamCard selected" data-team="alpha"><i></i><b>ALPHA</b><span>Assaut</span></button>
+        <button class="teamCard" data-team="bravo"><i></i><b>BRAVO</b><span>Manœuvre</span></button>
+        <button class="teamCard" data-team="charlie"><i></i><b>CHARLIE</b><span>Appui</span></button>
+      </div>
+
+      <div id="serverChooser" class="serverChooser" hidden>
+        <label for="serverUrl">Adresse du serveur de jeu</label>
+        <input id="serverUrl" type="url" autocomplete="off" spellcheck="false"
+          placeholder="https://votre-serveur.trycloudflare.com" />
+        <p class="serverHelp">GitHub Pages héberge le jeu, mais un serveur multijoueur doit être en ligne. Lance START_ONLINE.bat sur ton PC, puis colle ici son adresse HTTPS.</p>
+      </div>
+      <button id="playBtn" class="primary">REJOINDRE LE SERVEUR</button>
+      <button id="newProfileBtn" class="ghost">Créer un nouveau profil local</button>
+      <div class="tip">ZQSD/WASD · Shift sprint · clic droit viser · clic gauche tirer · R recharger · E soin · F court traîner/monter · F maintenu réanimer · K éjecter passagers · A/Q outil · maintenir G aperçu accessoire · relâcher G lancer/poser · Espace réapparaître · Tab scores · M / , carte</div>
+      <div id="menuStatus" class="status">Prêt.</div>
+      <div class="developerCredit">Création originale de <b>Nitarii</b><small>© 2026 Nitarii · Tous droits réservés · Toute reproduction ou redistribution sans autorisation écrite est interdite.</small></div>
+    </section>
+  </div>
+
+  <div id="pauseMenu" class="overlay compactOverlay gameMenuOverlay">
+    <div class="menuDock" role="navigation" aria-label="Menu de partie">
+      <button class="menuDockBtn active" data-menu-window="inventory" type="button"><b>INVENTAIRE</b><span>Achats & loadout</span></button>
+      <button class="menuDockBtn" data-menu-window="team" type="button"><b>ÉQUIPE</b><span>Équipe & escouade</span></button>
+      <button id="adminMenuTab" class="menuDockBtn hidden" data-menu-window="admin" type="button"><b>ADMIN</b><span>Gestion serveur</span></button>
+      <button class="menuDockBtn" data-menu-window="settings" type="button"><b>PARAMÈTRES</b><span>Audio & interface</span></button>
+      <button id="resumeBtn" class="menuDockResume primary" type="button">REPRENDRE</button>
+    </div>
+
+    <section id="inventoryWindow" class="panel pauseWindow active" data-menu-panel="inventory">
+      <div class="eyebrow">INVENTAIRE / BOUTIQUE</div>
+      <div class="windowTitleRow"><div><h2>Loadout</h2><p>Achats autorisés uniquement dans ta propre base.</p></div><div class="shopWallet"><span>ARGENT</span><b id="shopMoney">0 €</b></div></div>
+      <div class="loadoutSection splitLoadout">
+        <div class="loadoutSubTitle">ARME PRINCIPALE</div>
+        <div id="loadoutWeapons" class="loadoutGrid"></div>
+        <div class="loadoutSubTitle">ÉQUIPEMENTS</div>
+        <div id="loadoutEquipment" class="loadoutGrid equipmentGrid"></div>
+        <div class="loadoutSubTitle">OBJET DE SOIN · E</div>
+        <div id="loadoutMedical" class="loadoutGrid medicalGrid"></div>
+        <div class="loadoutSubTitle">OUTIL · A/Q</div>
+        <div id="loadoutTools" class="loadoutGrid accessoryGrid"></div>
+        <div class="loadoutSubTitle">ACCESSOIRE · G</div>
+        <div id="loadoutAccessories" class="loadoutGrid accessoryGrid"></div>
+        <div id="loadoutHint" class="small loadoutHint">Atteins le niveau requis, achète la licence une seule fois, puis rachète le matériel à chaque vie.</div>
+        <button id="buyLoadoutBtn" class="primary shopBuy" type="button">ACHETER & ÉQUIPER POUR CETTE VIE</button>
+      </div>
+    </section>
+
+    <section id="teamWindow" class="panel pauseWindow" data-menu-panel="team">
+      <div class="eyebrow">ÉQUIPE & ESCOUADE</div>
+      <h2>Organisation</h2>
+      <p>Changer d’équipe te fait réapparaître à sa base. Les membres de ton escouade sont affichés en vert.</p>
+      <div id="pauseTeams" class="teamPicker pauseTeams">
+        <button class="teamCard" data-switch-team="alpha"><i></i><b>ALPHA</b><span id="alphaCount">—</span></button>
+        <button class="teamCard" data-switch-team="bravo"><i></i><b>BRAVO</b><span id="bravoCount">—</span></button>
+        <button class="teamCard" data-switch-team="charlie"><i></i><b>CHARLIE</b><span id="charlieCount">—</span></button>
+      </div>
+      <div class="squadPanel">
+        <div class="loadoutTitle"><b>ESCOUADE</b><span>Choisis une escouade de ton équipe</span></div>
+        <div id="squadPicker" class="squadPicker">
+          <button data-squad="squad1" type="button">ESCOUADE 1</button>
+          <button data-squad="squad2" type="button">ESCOUADE 2</button>
+          <button data-squad="squad3" type="button">ESCOUADE 3</button>
+          <button data-squad="squad4" type="button">ESCOUADE 4</button>
+          <button id="leaveSquadBtn" class="leaveSquad" type="button">QUITTER</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="adminWindow" class="panel pauseWindow" data-menu-panel="admin">
+      <div id="adminPanel" class="adminPanel hidden">
+        <div class="eyebrow">PANNEAU ADMIN</div>
+        <h2>Administration</h2>
+        <label>Joueur humain</label>
+        <select id="adminPlayerSelect"></select>
+        <div class="adminActions">
+          <button id="adminLevelDown" type="button">−1 niveau</button>
+          <button id="adminLevelUp" type="button">+1 niveau</button>
+          <button id="adminGod" type="button">Godmode ON/OFF</button>
+          <button id="adminMoneyDown" type="button">−1 000 €</button>
+          <button id="adminMoneyUp" type="button">+1 000 €</button>
+          <button id="adminTeleportControl" type="button">TP point de contrôle</button>
+        </div>
+        <div class="adminSpawnRow"><select id="adminVehicleType"><option value="quad">Quad</option><option value="jeep">Jeep</option></select><button id="adminSpawnVehicle" type="button">Faire apparaître le véhicule</button></div>
+      </div>
+      <div id="adminUnavailable" class="adminUnavailable">Ce panneau est réservé à l’hôte administrateur.</div>
+    </section>
+
+    <section id="settingsWindow" class="panel pauseWindow" data-menu-panel="settings">
+      <div class="eyebrow">PARAMÈTRES</div>
+      <h2>Audio & interface</h2>
+      <div class="audioSettings">
+        <div class="audioSettingsHead"><span>VOLUME DES EFFETS</span><b id="sfxVolumeValue">50%</b></div>
+        <input id="sfxVolume" type="range" min="0" max="100" step="1" value="50" aria-label="Volume des effets sonores" />
+        <small>Tirs, explosions, pas, soins et interface. Le réglage est sauvegardé dans ce navigateur.</small>
+      </div>
+      <div class="settingsInfo">
+        <b>Raccourcis</b>
+        <p>ZQSD/WASD déplacement · Shift sprint · clic droit viser · R recharger · E soin · F interaction/réanimation · G accessoire · Tab scores · M/, carte.</p>
+      </div>
+    </section>
+  </div>
+
+  <div id="hud" class="hidden">
+    <div id="combatNotices" class="combatNotices" aria-live="polite"></div>
+    <div class="topbar">
+      <div class="brand">PROJECT<span>PC</span></div>
+      <div class="objectiveHud">
+        <div class="objectiveRow">
+          <b id="objectiveState">POINT DE CONTRÔLE NEUTRE</b>
+          <span id="objectiveTimer"></span>
+        </div>
+        <div class="captureTrack"><i id="captureFill"></i></div>
+        <div id="teamScoresMini" class="miniScores"></div>
+      </div>
+      <div id="connection" class="connection">● connecté</div>
+    </div>
+
+    <div class="leftStack">
+      <div class="card profileCard">
+        <div class="row"><strong id="hudName">Joueur</strong><span id="hudLevel">Niv. 1</span></div>
+        <div class="xpbar"><i id="xpFill"></i></div>
+        <div id="xpText" class="small">0 / 350 XP</div>
+        <div id="moneyText" class="moneyText">0 €</div>
+      </div>
+      <div id="killFeed" class="killFeed"></div>
+    </div>
+
+    <div class="rightStack">
+      <div class="card minimapCard">
+        <div class="cardTitle minimapTitle"><span>RADAR LOCAL</span><em>alliés · repérages partagés</em></div>
+        <canvas id="minimapCanvas" width="248" height="176"></canvas>
+      </div>
+      <div class="card unlocks">
+        <div class="cardTitle">PROCHAINS DÉBLOCAGES</div>
+        <div id="unlocks"></div>
+      </div>
+    </div>
+
+
+    <div id="scoreboardOverlay" class="scoreboardOverlay hidden">
+      <section class="scoreboardPanel">
+        <div class="scoreboardHead">
+          <div><span>POINT CONTROL · 3 ÉQUIPES</span><h2>SCORES</h2></div>
+          <div class="scoreboardHint">Maintenir TAB</div>
+        </div>
+        <div id="teamScores" class="teamScores scoreboardScores"></div>
+        <div id="leaderboard" class="scoreboardTeamsGrid"></div>
+      </section>
+    </div>
+
+    <div id="worldMap" class="worldMap hidden">
+      <section class="worldMapShell">
+        <div class="worldMapHead">
+          <div><span>CARTE TACTIQUE</span><b>PROJECTPC</b></div>
+          <div class="worldMapControls">
+            <button id="mapZoomOut" type="button" aria-label="Dézoomer">−</button>
+            <span id="mapZoomLabel">100%</span>
+            <button id="mapZoomIn" type="button" aria-label="Zoomer">+</button>
+          </div>
+        </div>
+        <canvas id="worldMapCanvas" width="1600" height="1000"></canvas>
+        <div class="worldMapFoot"><span>M / , : fermer · ZQSD/WASD : continuer à se déplacer</span><span>Molette : zoom · clic-glisser : déplacer</span><span>Alliés · ennemis repérés · bâtiments · zone de guerre · point de contrôle</span></div>
+      </section>
+    </div>
+
+    <div class="bottomHud">
+      <div class="healthBlock">
+        <div class="healthLabel"><span>PV</span><b id="hpText">100</b></div>
+        <div class="healthbar"><i id="hpFill"></i></div>
+        <div class="staminaLabel"><span>ENDURANCE</span><b id="staminaText">100%</b></div>
+        <div class="staminabar"><i id="staminaFill"></i></div>
+      </div>
+      <div class="weaponBlock">
+        <div id="weaponName" class="weaponName">PISTOLET</div>
+        <div class="ammo"><b id="ammoText">12</b><span id="magText">/12</span></div>
+        <div id="reloadText" class="small"></div>
+        <div id="aimText" class="aimText">TIR À LA HANCHE</div>
+      </div>
+      <div class="equipmentBlock medicalHud">
+        <div class="keycap">E</div>
+        <div><b id="medicalName">Bandage</b><small id="medicalText">3 utilisations</small></div>
+      </div>
+      <div class="equipmentBlock toolHud">
+        <div class="keycap">A/Q</div>
+        <div><b id="toolName">Caisse de munitions</b><small id="toolText">Prêt</small></div>
+      </div>
+      <div class="equipmentBlock accessoryHud">
+        <div class="keycap">G</div>
+        <div><b id="accessoryName">Grenade frag</b><small id="accessoryText">1/1</small></div>
+      </div>
+    </div>
+    <div id="respawn" class="respawn hidden"><span id="respawnLabel">AU SOL</span><b id="respawnTime">4.0</b><small>ESPACE pour réapparaître · un allié peut te réanimer</small></div>
+    <div id="reviveHint" class="reviveHint hidden">MAINTENIR <b>F</b> POUR RÉANIMER</div>
+    <div id="beingRevived" class="beingRevived hidden">RÉANIMATION EN COURS <b>0%</b></div>
+    <div id="vehicleOccupancy" class="vehicleOccupancy hidden"></div>
+    <div id="crosshair" class="crosshair"><i></i><i></i><i></i><i></i><span class="hitmarkerFx" aria-hidden="true"></span></div>
+  </div>
+
+  <script src="./js/game.js"></script>
+</body>
+</html>

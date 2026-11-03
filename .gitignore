@@ -1,0 +1,16 @@
+# Runtime / secrets
+cloudflared.exe
+node_modules/
+*.log
+
+# Progression des joueurs : ne jamais committer/publier cette base.
+data/profiles.json
+data/profiles.json.tmp
+data/profiles.corrupt-*.json
+data/*.bak
+
+# OS / éditeurs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

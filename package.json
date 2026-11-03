@@ -1,0 +1,15 @@
+{
+  "name": "projectpc-point-control",
+  "version": "2.6.0",
+  "private": true,
+  "description": "ProjectPC - Point Control, shooter tactique isométrique multijoueur avec serveur autoritaire et progression persistante.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "verify": "node scripts/verify.js",
+    "verify:server": "PROJECTPC_VERIFY_GEOMETRY=1 PROJECTPC_VERIFY_ONLY=1 node server.js",
+    "check": "node --check server.js && node --check src/server/index.js && node --check public/js/game.js",
+    "stress": "node scripts/stress-local.js"
+  },
+  "license": "UNLICENSED"
+}
