@@ -42,6 +42,7 @@
 
   <div id="pauseMenu" class="overlay compactOverlay gameMenuOverlay">
     <div class="menuDock" role="navigation" aria-label="Menu de partie">
+      <div class="dockTitle"><b>POINT CONTROL</b><small>MENU DE PARTIE</small></div>
       <button class="menuDockBtn active" data-menu-window="inventory" type="button"><b>INVENTAIRE</b><span>Achats & loadout</span></button>
       <button class="menuDockBtn" data-menu-window="team" type="button"><b>ÉQUIPE</b><span>Équipe & escouade</span></button>
       <button id="adminMenuTab" class="menuDockBtn hidden" data-menu-window="admin" type="button"><b>ADMIN</b><span>Gestion serveur</span></button>
@@ -50,6 +51,7 @@
     </div>
 
     <section id="inventoryWindow" class="panel pauseWindow active" data-menu-panel="inventory">
+      <div class="windowBar" data-window-drag><span>PROJECTPC · INVENTAIRE ET BOUTIQUE</span><button type="button" class="windowClose" aria-label="Fermer le menu">✕</button></div>
       <div class="eyebrow">INVENTAIRE / BOUTIQUE</div>
       <div class="windowTitleRow"><div><h2>Loadout</h2><p>Achats autorisés uniquement dans ta propre base.</p></div><div class="shopWallet"><span>ARGENT</span><b id="shopMoney">0 €</b></div></div>
       <div class="loadoutSection splitLoadout">
@@ -69,6 +71,7 @@
     </section>
 
     <section id="teamWindow" class="panel pauseWindow" data-menu-panel="team">
+      <div class="windowBar" data-window-drag><span>PROJECTPC · ÉQUIPE ET ESCOUADE</span><button type="button" class="windowClose" aria-label="Fermer le menu">✕</button></div>
       <div class="eyebrow">ÉQUIPE & ESCOUADE</div>
       <h2>Organisation</h2>
       <p>Changer d’équipe te fait réapparaître à sa base. Les membres de ton escouade sont affichés en vert.</p>
@@ -90,6 +93,7 @@
     </section>
 
     <section id="adminWindow" class="panel pauseWindow" data-menu-panel="admin">
+      <div class="windowBar" data-window-drag><span>PROJECTPC · ADMINISTRATION</span><button type="button" class="windowClose" aria-label="Fermer le menu">✕</button></div>
       <div id="adminPanel" class="adminPanel hidden">
         <div class="eyebrow">PANNEAU ADMIN</div>
         <h2>Administration</h2>
@@ -109,6 +113,7 @@
     </section>
 
     <section id="settingsWindow" class="panel pauseWindow" data-menu-panel="settings">
+      <div class="windowBar" data-window-drag><span>PROJECTPC · PARAMÈTRES</span><button type="button" class="windowClose" aria-label="Fermer le menu">✕</button></div>
       <div class="eyebrow">PARAMÈTRES</div>
       <h2>Audio & interface</h2>
       <div class="audioSettings">
@@ -116,6 +121,7 @@
         <input id="sfxVolume" type="range" min="0" max="100" step="1" value="50" aria-label="Volume des effets sonores" />
         <small>Tirs, explosions, pas, soins et interface. Le réglage est sauvegardé dans ce navigateur.</small>
       </div>
+      <div class="networkSettings"><b>DIAGNOSTIC RÉSEAU</b><div id="networkStatus" role="status">Connexion en attente…</div><small>Latence aller-retour avec le serveur ; le tunnel peut ajouter du délai.</small></div>
       <div class="settingsInfo">
         <b>Raccourcis</b>
         <p>ZQSD/WASD déplacement · Shift sprint · clic droit viser · R recharger · E soin · F interaction/réanimation · G accessoire · Tab scores · M/, carte.</p>
