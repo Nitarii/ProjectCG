@@ -196,3 +196,13 @@ Il faut que le PC serveur reste allumé pendant les parties.
 Le navigateur se connecte directement au serveur externe en WSS et la progression
 reste enregistrée uniquement sur la machine qui héberge le serveur.
 
+
+## Mise à jour 2.7 — stabilité, réseau et interface
+
+Le jeu utilise désormais quatre fenêtres de menu séparées : **Inventaire/Achats**, **Équipe/Escouade**, **Administration** et **Paramètres**. Sur ordinateur, les panneaux peuvent être déplacés depuis leur barre supérieure. Les paramètres affichent la latence aller-retour serveur et les données en attente d'envoi.
+
+**Sécurité de l'administration :** le premier joueur connecté n'est plus automatiquement administrateur. Le serveur affiche un **code confidentiel dans sa console** au démarrage. L'hôte le saisit dans le champ facultatif du menu de connexion. Le code peut être fixé en utilisant la variable d'environnement `PROJECTPC_ADMIN_TOKEN`. Ne jamais le publier ni le partager.
+
+Avant publication : `npm run verify` (simulation et tests réseau). Le déploiement GitHub Pages exécute désormais ces tests automatiquement.
+
+[Revue technique détaillée, composant par composant](docs/TECHNICAL_REVIEW_2.7.md).
