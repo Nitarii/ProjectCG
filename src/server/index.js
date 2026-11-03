@@ -11,6 +11,12 @@ const { ProfileStore } = require('./persistence/profile-store');
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || '127.0.0.1';
+const ADMIN_TOKEN = process.env.PROJECTPC_ADMIN_TOKEN || crypto.randomBytes(18).toString('hex');
+function isValidAdminToken(value) {
+  if(typeof value !== 'string' || value.length < 16 || value.length > 128)return false;
+  const supplied=Buffer.from(value,'utf8'),actual=Buffer.from(ADMIN_TOKEN,'utf8');
+  return supplied.length===actual.length && crypto.timingSafeEqual(supplied,actual);
+}
 const TEAM_TARGET_SIZE = Number(process.env.TEAM_TARGET_SIZE || 33); // combattants par équipe
 const PILOTS_PER_TEAM = 2;
 const MAX_HUMANS_PER_TEAM = Math.max(1, TEAM_TARGET_SIZE-PILOTS_PER_TEAM);
@@ -723,7 +729,7 @@ initializeVehicles();
 function humanPlayers(){return[...players.values()].filter(p=>!p.isBot);}
 function refreshAdminHost(){
   if(adminHostId&&players.get(adminHostId)&&!players.get(adminHostId).isBot)return;
-  for(const p of players.values())p.isAdmin=false;const next=humanPlayers().sort((a,b)=>a.joinedAt-b.joinedAt)[0]||null;adminHostId=next?.id||null;if(next){next.isAdmin=true;send(next.ws,'admin_granted',{});}
+  for(const p of players.values())p.isAdmin=false;const next=humanPlayers().filter(p=>p.adminVerified).sort((a,b)=>a.joinedAt-b.joinedAt)[0]||null;adminHostId=next?.id||null;if(next){next.isAdmin=true;send(next.ws,'admin_granted',{});}
 }
 function findSafeVehicleSpawn(teamId,type,x,y,now=Date.now()){
   const cfg=VEHICLE_CONFIG[type]||VEHICLE_CONFIG.quad,probe={teamId,type,radius:cfg.radius};
@@ -779,7 +785,8 @@ wss.on('connection', ws => {
       profiles[profileKey] = profile; scheduleSave();
 
       const joinTeam=availableHumanTeam(msg.teamId);const player = makeHumanPlayer(ws, profileKey, profile, joinTeam);
-      clients.set(ws, player); players.set(player.id, player);if(!adminHostId){adminHostId=player.id;player.isAdmin=true;}
+      player.adminVerified=isValidAdminToken(msg.adminToken);
+      clients.set(ws, player); players.set(player.id, player);if(!adminHostId&&player.adminVerified){adminHostId=player.id;player.isAdmin=true;}
       botBalanceDirty=true;
       send(ws, 'welcome', {
         selfId:player.id, map:{...MAP,bases:BASE_SPAWNS,baseRadius:BASE_RADIUS}, weapons:WEAPONS, equipment:EQUIPMENT, medicalItems:MEDICAL_ITEMS, accessories:ACCESSORIES, tools:TOOLS, teams:TEAMS,
@@ -2530,6 +2537,7 @@ const leaderboardTimer=setInterval(()=>{
 
 server.listen(PORT,HOST,()=>{
   console.log('');console.log('============================================================');console.log(' ProjectPC v2.6 - POINT CONTROL');
+  console.log(' Code administrateur (privé, ne jamais partager) : '+ADMIN_TOKEN);
   console.log(` Local : http://localhost:${PORT}`);console.log(` Santé : http://localhost:${PORT}/health`);console.log(' Tunnel: cloudflared tunnel --url http://localhost:'+PORT);
   console.log(` Carte : ${MAP.width} x ${MAP.height} (${MAP.obstacles.length} obstacles)`);console.log(` Équipes: ${TEAM_TARGET_SIZE} combattants par équipe · jusqu’à ${MAX_HUMANS_PER_TEAM} joueurs humains + ${PILOTS_PER_TEAM} navettes`);console.log('============================================================');console.log('');
 });
