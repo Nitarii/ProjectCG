@@ -11,6 +11,7 @@ class ProfileStore {
     this.writing = false;
     this.dirty = false;
     this.lastError = null;
+    this.failures = 0;
     fs.mkdirSync(this.dataDir, { recursive:true });
     if (!fs.existsSync(this.filePath)) fs.writeFileSync(this.filePath, '{}', 'utf8');
   }
@@ -45,23 +46,23 @@ class ProfileStore {
       const json = JSON.stringify(this.latest, null, 2);
       await fs.promises.writeFile(tmp, json, 'utf8');
       await fs.promises.rename(tmp, this.filePath);
-      this.lastError = null;
+      this.lastError = null;this.failures=0;
     } catch (e) {
-      this.lastError = e;
+      this.lastError = e;this.failures++;
       this.dirty = true;
       console.error('Sauvegarde progression impossible:', e.message);
     } finally {
       this.writing = false;
-      if (this.dirty) this.schedule(this.latest, 100);
+      if(this.dirty)this.schedule(this.latest,this.lastError?Math.min(30000,500*Math.pow(2,Math.min(this.failures,6))):100);
     }
   }
   flushSync(data) {
     try {
       clearTimeout(this.timer);
-      const tmp = this.filePath + '.tmp';
+      const tmp = this.filePath + '.sync.tmp';
       fs.writeFileSync(tmp, JSON.stringify(data || this.latest || {}, null, 2), 'utf8');
       fs.renameSync(tmp, this.filePath);
-    } catch {}
+    } catch(e) { console.error('Sauvegarde finale impossible:',e.message); }
   }
 }
 
