@@ -12,16 +12,23 @@ concurrency:
   cancel-in-progress: true
 jobs:
   publish:
-    if: hashFiles('public/index.html') != ''
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - name: Check game files
+        id: site
+        shell: bash
+        run: |
+          if [ -f public/index.html ]; then echo "ready=true" >> "$GITHUB_OUTPUT"; else echo "ready=false" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.site.outputs.ready == 'true'
+        uses: actions/configure-pages@v5
+      - if: steps.site.outputs.ready == 'true'
+        uses: actions/upload-pages-artifact@v3
         with:
           path: public
-      - id: deployment
+      - if: steps.site.outputs.ready == 'true'
+        id: deployment
         uses: actions/deploy-pages@v4
