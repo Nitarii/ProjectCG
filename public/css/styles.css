@@ -102,3 +102,21 @@
 .serverChooser input{width:100%;box-sizing:border-box;}
 .serverHelp{font-size:11px;line-height:1.5;opacity:.78;margin:7px 0;}
 .developerCredit small{display:block;font-size:9px;font-weight:normal;line-height:1.4;margin-top:7px;opacity:.66;}
+
+/* v2.7 — separate adjustable in-game windows */
+.dockTitle{padding:8px 9px 11px;border-bottom:1px solid var(--line);margin-bottom:3px}
+.dockTitle b{display:block;font-size:12px;letter-spacing:.12em;color:var(--accent)}
+.dockTitle small{font-size:9px;letter-spacing:.16em;color:#89948c}
+.pauseWindow{right:auto;bottom:auto;left:clamp(225px,27vw,420px);top:50%;width:min(900px,calc(100vw - 260px))!important;max-width:calc(100vw - 245px)!important;max-height:calc(100vh - 52px)!important;transform:translateY(-50%);box-shadow:0 24px 90px rgba(0,0,0,.66)}
+#inventoryWindow{width:min(1040px,calc(100vw - 260px))!important}
+#teamWindow{width:min(720px,calc(100vw - 260px))!important}
+#adminWindow{width:min(780px,calc(100vw - 260px))!important}
+#settingsWindow{width:min(650px,calc(100vw - 260px))!important}
+.windowBar{display:flex;justify-content:space-between;align-items:center;cursor:grab;touch-action:none;user-select:none;border-bottom:1px solid var(--line);padding:0 0 13px;margin:0 0 16px;color:#8caa91;font-size:10px;letter-spacing:.12em;font-weight:800}
+.windowBar:active{cursor:grabbing}.windowClose{cursor:pointer;background:transparent;color:#b4c1b1;border:1px solid var(--line);border-radius:6px;padding:5px 11px;font-size:14px}
+.windowClose:hover{background:rgba(180,90,90,.2);border-color:rgba(255,130,130,.36)}
+.networkSettings{margin-top:24px;padding:16px;background:rgba(77,106,83,.12);border:1px solid rgba(128,175,136,.2);border-radius:10px}
+.networkSettings b{display:block;font-size:11px;letter-spacing:.09em;color:#c4d5c0}
+.networkSettings div{font-size:13px;font-weight:700;margin:12px 0 4px}
+.networkSettings small{font-size:11px;color:#8c9b8c}
+@media(max-width:900px){.dockTitle{display:none}.pauseWindow,#inventoryWindow,#teamWindow,#adminWindow,#settingsWindow{left:8px;right:8px;top:68px;bottom:8px;width:calc(100vw - 16px)!important;max-width:none!important;max-height:none!important;transform:none}.windowBar{cursor:default;touch-action:auto}}
