@@ -950,6 +950,8 @@ const NAV_CELL=140;
 const NAV_CLEARANCE=56;
 function botNavRadius(bot){return Math.max(NAV_CLEARANCE,(bot.radius||24)+24);}
 let NAV_GRID=null;
+// Reusable A* arrays. Must be declared before bots request their first path.
+let NAV_SCRATCH=null;
 function getNavGrid(){
   if(NAV_GRID)return NAV_GRID;
   const cols=Math.ceil(MAP.width/NAV_CELL),rows=Math.ceil(MAP.height/NAV_CELL),blocked=new Uint8Array(cols*rows);
@@ -2355,6 +2357,15 @@ function runGeometrySelfTests(){
   supplyCrates.push({id:'crate-test-2',type:'ammo',ownerId:ammoOwner.id,teamId:'charlie',x:ffBaseX,y:ffBaseY,radius:125,expiresAt:ffNow+45000,lastServe:new Map(),accessoryServed:new Set(),nextHeal:new Map()});updateSupplyCrates(ffNow+6001);
   assert.strictEqual(ammoTarget.accessoryCharges,1,'A different ammo crate could not replenish accessory stock');
   players.delete(ammoOwner.id);players.delete(ammoTarget.id);supplyCrates.splice(0,supplyCrates.length);
+
+  // Regression: first A* request must initialize and then reuse its scratch buffers.
+  const firstNavScratch=navScratch(64);
+  assert.strictEqual(firstNavScratch.total,64,'Bot navigation scratch allocation failed');
+  firstNavScratch.gScore[0]=123;
+  const reusedNavScratch=navScratch(64);
+  assert.strictEqual(reusedNavScratch,firstNavScratch,'Bot navigation scratch should be reused');
+  assert.strictEqual(reusedNavScratch.gScore[0],Infinity,'Bot navigation scratch was not reset');
+  assert.strictEqual(navScratch(96).total,96,'Bot navigation scratch resize failed');
 
   // Navigation bots : ajoute temporairement un long mur dans une zone vide et vérifie qu'un bot le contourne.
   let testArea=null;
