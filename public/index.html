@@ -4,18 +4,20 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <meta name="theme-color" content="#101318" />
-  <title>ProjectPC — Point Control</title>
+  <title>ProjectCG2 — Milsim FPS 3D (prototype)</title>
   <link rel="stylesheet" href="./css/styles.css" />
 </head>
 <body>
-  <canvas id="game"></canvas>
+  <canvas id="world3d" aria-label="Environnement FPS 3D"></canvas>
+  <canvas id="game" class="legacyCanvas"></canvas>
+  <div id="fpsInstructions" class="fpsInstructions hidden">CLIQUE POUR CONTRÔLER LA CAMÉRA · ÉCHAP POUR LE MENU</div>
   <div id="flashOverlay" class="blindFlash"></div>
 
   <div id="menu" class="overlay active">
     <section class="panel hero">
       <div class="eyebrow">POINT CONTROL · 3 ÉQUIPES</div>
       <h1>PROJECT<span>PC</span></h1>
-      <p>Shooter tactique isométrique. Profil local gratuit, sans compte ni e-mail. Choisis ton équipe puis rejoins la partie.</p>
+      <p>FPS 3D tactique multijoueur : simulation milsim en développement. Profil local gratuit, sans compte ni e-mail. Choisis ton équipe puis rejoins la partie.</p>
       <label>Pseudo</label>
       <input id="nickname" maxlength="18" autocomplete="nickname" placeholder="Ton pseudo" />
 
@@ -37,7 +39,7 @@
       </div>
       <button id="playBtn" class="primary">REJOINDRE LE SERVEUR</button>
       <button id="newProfileBtn" class="ghost">Créer un nouveau profil local</button>
-      <div class="tip">ZQSD/WASD · Shift sprint · clic droit viser · clic gauche tirer · R recharger · E soin · F court traîner/monter · F maintenu réanimer · K éjecter passagers · A/Q outil · maintenir G aperçu accessoire · relâcher G lancer/poser · Espace réapparaître · Tab scores · M / , carte</div>
+      <div class="tip">Souris : regarder · ZQSD/WASD : avancer/reculer et déplacement latéral · Shift sprint · clic droit viser · clic gauche tirer · R recharger · E soin · F court traîner/monter · F maintenu réanimer · K éjecter passagers · X outil · maintenir G aperçu accessoire · relâcher G lancer/poser · Espace réapparaître · Tab scores · M / , carte</div>
       <div id="menuStatus" class="status">Prêt.</div>
       <div class="developerCredit">Création originale de <b>Nitarii</b><small>© 2026 Nitarii · Tous droits réservés · Toute reproduction ou redistribution sans autorisation écrite est interdite.</small></div>
     </section>
@@ -228,6 +230,7 @@
     <div id="crosshair" class="crosshair"><i></i><i></i><i></i><i></i><span class="hitmarkerFx" aria-hidden="true"></span></div>
   </div>
 
+  <script src="./js/fps3d.js"></script>
   <script src="./js/game.js"></script>
 </body>
 </html>
