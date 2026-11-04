@@ -2,7 +2,7 @@
 
 **Développeur : Nitarii**
 
-Shooter tactique PvP top-down/isométrique à trois équipes avec serveur WebSocket autoritaire et progression persistante.
+Prototype FPS 3D tactique multijoueur à trois équipes avec serveur WebSocket autoritaire et progression persistante.
 
 
 
