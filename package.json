@@ -1,8 +1,8 @@
 {
   "name": "projectpc-point-control",
-  "version": "2.7.1",
+  "version": "3.0.0-alpha",
   "private": true,
-  "description": "ProjectPC - Point Control, shooter tactique isométrique multijoueur avec serveur autoritaire et progression persistante.",
+  "description": "ProjectPC - Point Control, prototype FPS 3D tactique multijoueur avec serveur autoritaire et progression persistante.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
