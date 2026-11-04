@@ -14,6 +14,7 @@ const checks = [
   ['--check', 'src/server/persistence/profile-store.js'],
   ['--check', 'scripts/stress-local.js'],
   ['--check', 'scripts/test-network.js'],
+  ['--check', 'scripts/test-fps3d.js'],
   ['--check', 'public/js/game.js'],
   ['--check', 'public/js/fps3d.js'],
 ];
@@ -41,4 +42,6 @@ try {
 if (status !== 0) process.exit(status);
 const net = spawnSync(process.execPath, ['scripts/test-network.js'], {cwd:root,stdio:'inherit'});
 if(net.status !== 0)process.exit(net.status||1);
+const render=spawnSync(process.execPath,['scripts/test-fps3d.js'],{cwd:root,stdio:'inherit'});
+if(render.status !== 0)process.exit(render.status||1);
 console.log('ProjectPC verify: OK');
