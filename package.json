@@ -10,7 +10,8 @@
     "verify:server": "PROJECTPC_VERIFY_GEOMETRY=1 PROJECTPC_VERIFY_ONLY=1 node server.js",
     "check": "node --check server.js && node --check src/server/index.js && node --check public/js/game.js",
     "stress": "node scripts/stress-local.js",
-    "test:network": "node scripts/test-network.js"
+    "test:network": "node scripts/test-network.js",
+    "test:render": "node scripts/test-fps3d.js"
   },
   "license": "UNLICENSED"
 }
