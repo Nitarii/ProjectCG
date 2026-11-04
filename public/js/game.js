@@ -2,6 +2,11 @@
 'use strict';
 
 const canvas = document.getElementById('game');
+let renderer3D=null;try{renderer3D=window.ProjectCG3D?.create(document.getElementById('world3d'))||null;}catch(error){console.warn('WebGL2 unavailable, switching to 2D fallback:',error.message);}
+const FPS3D = !!renderer3D;
+if(!FPS3D)document.body.classList.add('fps-fallback');
+let fpsYaw=0,fpsPitch=0,fpsYawInitialized=false;
+function fpsLocked(){return FPS3D&&document.pointerLockElement===document.getElementById('world3d');}
 const ctx = canvas.getContext('2d');
 const ui = Object.fromEntries([...document.querySelectorAll('[id]')].map(el => [el.id, el]));
 const minimapCtx = ui.minimapCanvas.getContext('2d');
@@ -130,7 +135,7 @@ function spatialAudio(x,y,max=1800){
   if(d>=max)return{gain:0,pan:0,distance:d};
   const n=Math.max(0,1-d/max),gain=Math.pow(n,1.35);
   // Projection isométrique : (dx-dy) correspond approximativement à la provenance gauche/droite à l'écran.
-  const screenX=dx-dy,pan=Math.max(-1,Math.min(1,screenX/(Math.max(1,max)*.58)));
+  const screenX=FPS3D?(-Math.sin(fpsYaw)*dx+Math.cos(fpsYaw)*dy):dx-dy,pan=Math.max(-1,Math.min(1,screenX/(Math.max(1,max)*.58)));
   return{gain,pan,distance:d};
 }
 function connectSpatial(output,spatial=null){
@@ -286,6 +291,7 @@ function connect() {
   ws.addEventListener('open', () => ws.send(JSON.stringify({ type:'hello', token:getToken(), nickname, teamId:selectedTeam, adminToken:ui.adminToken?.value||'' })));
   ws.addEventListener('message', e => { let msg; try { msg = JSON.parse(e.data); } catch { return; } onMessage(msg); });
   ws.addEventListener('close', () => {
+    if(fpsLocked())document.exitPointerLock?.();fpsYawInitialized=false;
     connected = false; netPingPending=null;serverRttMs=null; mouse.down = false; mouse.aiming = false; keys={up:false,down:false,left:false,right:false,sprint:false};
     ui.connection.textContent = '● déconnecté'; ui.connection.style.color = '#ff6570';
     ui.menuStatus.textContent = 'Connexion perdue. Tu peux rejoindre à nouveau.';
@@ -301,7 +307,7 @@ function onMessage(msg) {
   if (msg.type === 'welcome') {
     selfId=msg.selfId; map=msg.map; buildObstacleIndex(); weapons=msg.weapons||{}; equipment=msg.equipment||[]; medicalItems=msg.medicalItems||[]; accessories=msg.accessories||[]; tools=msg.tools||[]; teams=msg.teams||{}; profile=msg.profile; match=msg.match||null; isAdminSession=!!msg.isAdmin;
     draftLoadout={...(profile?.loadout||{})};
-    connected=true; resetTacticalMapView(); ui.menu.classList.remove('active'); ui.hud.classList.remove('hidden');
+    connected=true; resetTacticalMapView();if(ui.fpsInstructions)ui.fpsInstructions.classList.toggle('hidden',!FPS3D); ui.menu.classList.remove('active'); ui.hud.classList.remove('hidden');
     ui.connection.textContent='● connecté'; ui.connection.style.color=''; updateProfileUi(); updateMatchUi(); renderAdminPanel(); renderSquadPanel();
   } else if(msg.type==='net_pong') {
     if(netPingPending && msg.nonce===netPingPending.nonce){
@@ -314,6 +320,7 @@ function onMessage(msg) {
     for (const p of packetPlayers) {
       const old=snapshots.get(p.id); snapshots.set(p.id,{...p,rx:old?.rx??p.x,ry:old?.ry??p.y,rangle:old?.rangle??p.angle,receivedAt});
     }
+    if(FPS3D&&!fpsYawInitialized){const me=packetPlayers.find(p=>p.id===selfId);if(me){fpsYaw=me.angle||0;fpsYawInitialized=true;}}
     const live=new Set(packetPlayers.map(p=>p.id)); for(const id of snapshots.keys()) if(!live.has(id)) snapshots.delete(id);
     if(msg.shots?.length)ingestShotBatch(msg.shots,msg.serverTime); // compatibilité avec anciens serveurs.
     worldGrenades=msg.grenades||[]; worldRockets=msg.rockets||[]; worldMines=msg.mines||[];
@@ -458,7 +465,7 @@ function combatNotice(reason, amount, moneyAmount=null){
 function resize(){
   // Le canvas 2D était rendu jusqu'à 2x la résolution CSS. Sur des écrans 1440p/4K ou
   // via un navigateur distant cela doublait/quadrupait facilement le coût GPU sans gain lisible.
-  deviceScale=Math.max(.72,Math.min(1.35,devicePixelRatio||1)*renderQuality); canvas.width=Math.floor(innerWidth*deviceScale);canvas.height=Math.floor(innerHeight*deviceScale);canvas.style.width=innerWidth+'px';canvas.style.height=innerHeight+'px';
+  deviceScale=Math.max(.72,Math.min(1.35,devicePixelRatio||1)*renderQuality);renderer3D?.resize(renderQuality); canvas.width=Math.floor(innerWidth*deviceScale);canvas.height=Math.floor(innerHeight*deviceScale);canvas.style.width=innerWidth+'px';canvas.style.height=innerHeight+'px';
   ctx.setTransform(deviceScale,0,0,deviceScale,0,0);
   visionCanvas.width=Math.max(1,Math.ceil(innerWidth*VISION_SCALE));visionCanvas.height=Math.max(1,Math.ceil(innerHeight*VISION_SCALE));
   wallFogCanvas.width=Math.max(1,Math.ceil(innerWidth*WALL_FOG_SCALE));wallFogCanvas.height=Math.max(1,Math.ceil(innerHeight*WALL_FOG_SCALE));nextWallFogAt=0;nextMinimapAt=0;
@@ -538,6 +545,7 @@ function isTacticalMapKey(e){
 }
 function resetTacticalMapView(){if(!map)return;tacticalMapView.zoom=1;tacticalMapView.cx=map.width/2;tacticalMapView.cy=map.height/2;clampTacticalMapView();}
 function openTacticalMap(){
+  if(fpsLocked())document.exitPointerLock();
   if(!connected||pauseOpen()||ui.menu.classList.contains('active'))return;
   setScoreboardHeld(false);
   // La carte n'interrompt plus le déplacement : seules la visée, le tir et les actions contextuelles sont neutralisés.
@@ -548,8 +556,8 @@ function openTacticalMap(){
 }
 function closeTacticalMap(){if(!tacticalMapOpen)return;tacticalMapOpen=false;tacticalMapView.dragging=false;ui.worldMap.classList.add('hidden');}
 function toggleTacticalMap(){tacticalMapOpen?closeTacticalMap():openTacticalMap();}
-function openPauseMenu(){if(!connected)return;closeTacticalMap();setScoreboardHeld(false);keys={up:false,down:false,left:false,right:false,sprint:false};mouse.down=false;mouse.aiming=false;sendInput(true);ui.pauseMenu.classList.add('active');updateMatchUi();renderAdminPanel();setPauseWindow(pauseWindow||'inventory');}
-function closePauseMenu(){ui.pauseMenu.classList.remove('active');}
+function openPauseMenu(){if(!connected)return;if(fpsLocked())document.exitPointerLock();closeTacticalMap();setScoreboardHeld(false);keys={up:false,down:false,left:false,right:false,sprint:false};mouse.down=false;mouse.aiming=false;sendInput(true);ui.pauseMenu.classList.add('active');updateMatchUi();renderAdminPanel();setPauseWindow(pauseWindow||'inventory');}
+function closePauseMenu(){ui.pauseMenu.classList.remove('active');if(FPS3D&&connected)renderer3D.canvas.requestPointerLock?.();}
 
 addEventListener('keydown',e=>{
   if(isTypingTarget(e.target))return;
@@ -559,7 +567,7 @@ addEventListener('keydown',e=>{
   const moveAction=movementActionForEvent(e);
   if((moveAction||['ShiftLeft','ShiftRight'].includes(e.code))&&!menuControlsBlocked()){if(e.code.startsWith('Arrow'))e.preventDefault();if(moveAction)setMovement(moveAction,true);else{const changed=keys.sprint!==true;keys.sprint=true;if(changed)sendInput(true);}return;}
   if(actionControlsBlocked())return;if(e.repeat)return;
-  if(isToolKey(e)){if(!vehicleCombatLocked())send({type:'tool',angle:aimAngle()});return;}
+  if(e.code==='KeyX'||isToolKey(e)){if(!vehicleCombatLocked())send({type:'tool',angle:aimAngle()});return;}
   if(e.code==='KeyR'){if(!vehicleCombatLocked())send({type:'reload'});}
   if(e.code==='KeyE')send({type:'medical'});
   if(e.code==='KeyF'){
@@ -580,8 +588,9 @@ addEventListener('keyup',e=>{
   if(isTypingTarget(e.target))return;const moveAction=movementActionForEvent(e);if(moveAction&&!menuControlsBlocked())setMovement(moveAction,false);if(['ShiftLeft','ShiftRight'].includes(e.code)&&!menuControlsBlocked()){const changed=keys.sprint!==false;keys.sprint=false;if(changed)sendInput(true);}
 });
 addEventListener('blur',()=>{accessoryPreviewHeld=false;setScoreboardHeld(false);clearTimeout(fHoldTimer);fHoldTimer=null;fDownAt=0;if(reviveHeld||fHoldSent){reviveHeld=false;fHoldSent=false;send({type:'revive_stop'});}keys={up:false,down:false,left:false,right:false,sprint:false};mouse.down=false;mouse.aiming=false;sendInput(true);});
-addEventListener('mousemove',e=>{mouse.x=e.clientX;mouse.y=e.clientY;ui.crosshair.style.left=mouse.x+'px';ui.crosshair.style.top=mouse.y+'px';updateCrosshairRange();});
-addEventListener('mousedown',e=>{if(actionControlsBlocked()||vehicleCombatLocked())return;if(e.button===0){mouse.down=true;tryFireInput('click');}if(e.button===2){mouse.aiming=true;sendInput(true);}});
+addEventListener('mousemove',e=>{if(fpsLocked()){fpsYaw=(fpsYaw+(e.movementX||0)*.0022)%(Math.PI*2);fpsPitch=Math.max(-1.18,Math.min(1.18,fpsPitch-(e.movementY||0)*.0019));mouse.x=innerWidth/2;mouse.y=innerHeight/2;sendInput();return;}mouse.x=e.clientX;mouse.y=e.clientY;ui.crosshair.style.left=mouse.x+'px';ui.crosshair.style.top=mouse.y+'px';updateCrosshairRange();});
+document.addEventListener('pointerlockchange',()=>{if(FPS3D&&ui.fpsInstructions)ui.fpsInstructions.classList.toggle('hidden',!connected||fpsLocked()||actionControlsBlocked());});
+addEventListener('mousedown',e=>{if(actionControlsBlocked()||vehicleCombatLocked())return;if(FPS3D&&!fpsLocked()){renderer3D.canvas.requestPointerLock?.();return;}if(e.button===0){mouse.down=true;tryFireInput('click');}if(e.button===2){mouse.aiming=true;sendInput(true);}});
 addEventListener('mouseup',e=>{if(e.button===0)mouse.down=false;if(e.button===2){mouse.aiming=false;sendInput(true);}});addEventListener('contextmenu',e=>e.preventDefault());
 
 function tacticalMapMetrics(){
@@ -616,12 +625,12 @@ function endTacticalMapDrag(e){if(!tacticalMapView.dragging)return;if(e&&tactica
 ui.worldMapCanvas.addEventListener('pointerup',endTacticalMapDrag);ui.worldMapCanvas.addEventListener('pointercancel',endTacticalMapDrag);
 ui.worldMapCanvas.addEventListener('dblclick',()=>{resetTacticalMapView();updateMapZoomLabel();drawWorldMap();});
 
-function aimAngle(){const p=selfPlayer();if(!p)return 0;const ps=project(p.rx??p.x,p.ry??p.y,18),v=inverseVector(mouse.x-ps.x,mouse.y-ps.y);return Math.atan2(v.y,v.x);}
+function aimAngle(){if(FPS3D)return fpsYaw;const p=selfPlayer();if(!p)return 0;const ps=project(p.rx??p.x,p.ry??p.y,18),v=inverseVector(mouse.x-ps.x,mouse.y-ps.y);return Math.atan2(v.y,v.x);}
 function send(obj){if(!ws||ws.readyState!==WebSocket.OPEN)return false;if(ws.bufferedAmount>96*1024&&obj?.type==='input')return false;ws.send(JSON.stringify(obj));return true;}
-function sendInput(force=false){const now=performance.now();if(!force&&now-lastInputSent<45)return;lastInputSent=now;const me=selfPlayer(),combatLocked=!!me?.vehicleId;send({type:'input',keys,angle:(tacticalMapOpen||combatLocked)?(me?.angle||0):aimAngle(),aiming:(tacticalMapOpen||combatLocked)?false:mouse.aiming});}
-function tryFireInput(mode='hold'){const p=selfPlayer();if(!p?.alive||p.sprinting||controlsBlocked())return;const w=weapons[p.weaponId];if(!w)return;if(mode==='hold'&&!w.automatic)return;const now=performance.now();if(now-lastFireSent<1000/w.fireRate*.82)return;lastFireSent=now;send({type:'fire',angle:aimAngle()});}
+function sendInput(force=false){const now=performance.now();if(!force&&now-lastInputSent<45)return;lastInputSent=now;const me=selfPlayer(),combatLocked=!!me?.vehicleId;send({type:'input',keys,angle:(tacticalMapOpen||combatLocked)?(me?.angle||0):aimAngle(),pitch:FPS3D?fpsPitch:0,fps:FPS3D,aiming:(tacticalMapOpen||combatLocked)?false:mouse.aiming});}
+function tryFireInput(mode='hold'){const p=selfPlayer();if(!p?.alive||p.sprinting||controlsBlocked())return;const w=weapons[p.weaponId];if(!w)return;if(mode==='hold'&&!w.automatic)return;const now=performance.now();if(now-lastFireSent<1000/w.fireRate*.82)return;lastFireSent=now;send({type:'fire',angle:aimAngle(),pitch:FPS3D?fpsPitch:0});}
 function cursorWorldDistance(){const p=selfPlayer();if(!p)return 0;const ps=project(p.rx??p.x,p.ry??p.y,18),v=inverseVector(mouse.x-ps.x,mouse.y-ps.y);return Math.hypot(v.x,v.y);}
-function updateCrosshairRange(){const p=selfPlayer(),w=p&&weapons[p.weaponId];if(!w)return;const d=cursorWorldDistance(),active=!p.sprinting;ui.crosshair.classList.toggle('falloff',active&&d>w.range&&d<w.range*2);ui.crosshair.classList.toggle('outOfRange',active&&d>=w.range*2);}
+function updateCrosshairRange(){ui.crosshair.classList.remove('falloff','outOfRange');return;const p=selfPlayer(),w=p&&weapons[p.weaponId];if(!w)return;const d=cursorWorldDistance(),active=!p.sprinting;ui.crosshair.classList.toggle('falloff',active&&d>w.range&&d<w.range*2);ui.crosshair.classList.toggle('outOfRange',active&&d>=w.range*2);}
 
 function updateSelfHud(){
   const p=selfPlayer();if(!p)return;
@@ -686,7 +695,7 @@ function clientPlayerCanStandAt(x,y,r=27){
 function predictSelfRender(me,dt){
   if(!me)return;const authX=me.x,authY=me.y;
   if(!me.alive||me.downed||me.vehicleId||(match?.prepMs||0)>0){const b=1-Math.exp(-14*dt);me.rx+=(authX-me.rx)*b;me.ry+=(authY-me.ry)*b;return;}
-  const sx=(keys.right?1:0)-(keys.left?1:0),sy=(keys.down?1:0)-(keys.up?1:0);let dx=sx+sy,dy=-sx+sy;const moving=!!(dx||dy);
+  const sx=(keys.right?1:0)-(keys.left?1:0),sy=(keys.down?1:0)-(keys.up?1:0);let dx=FPS3D?(-sy*Math.cos(fpsYaw)-sx*Math.sin(fpsYaw)):sx+sy,dy=FPS3D?(-sy*Math.sin(fpsYaw)+sx*Math.cos(fpsYaw)):-sx+sy;const moving=!!(dx||dy);
   if(moving){const len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;}
   const healLocked=!!me.beingHealedById;const wantsSprint=moving&&keys.sprint&&!mouse.aiming&&!me.dragTargetId&&!(me.medicalUseMs>0)&&!healLocked&&(me.stamina||0)>.5;
   let speed=wantsSprint?410:255;if(me.dragTargetId)speed*=.68;if(me.medicalUseMs>0)speed*=.62;if(healLocked)speed=0;
@@ -1091,6 +1100,7 @@ function drawWorldMap(){
 }
 function worldEntityOnScreen(x,y,margin=180){const p=project(x,y,20);return p.x>=-margin&&p.x<=innerWidth+margin&&p.y>=-margin&&p.y<=innerHeight+margin;}
 function render(){
+  if(FPS3D){const me=selfPlayer();renderer3D.draw({me,map,quality:renderQuality,yaw:fpsYaw,pitch:fpsPitch,aiming:mouse.aiming,obstacles:obstaclesNearClient,players:snapshots.values(),selfId,weapons,vehicles:worldVehicles,crates:worldCrates,mines:worldMines,grenades:worldGrenades,rockets:worldRockets,shots,match});const now=performance.now();if(now>=nextMinimapAt){nextMinimapAt=now+120;drawMinimap();}drawBlindness(me);if(tacticalMapOpen&&now>=nextWorldMapAt){nextWorldMapAt=now+50;drawWorldMap();}return;}
   ctx.setTransform(deviceScale,0,0,deviceScale,0,0);ctx.clearRect(0,0,innerWidth,innerHeight);drawMap();drawWeaponRange(selfPlayer());drawCrateZones();
   if(map){
     const renderables=[],me=selfPlayer(),obstacles=me?obstaclesNearClient(me.rx??me.x,me.ry??me.y,renderObstacleRadius()):map.obstacles;
