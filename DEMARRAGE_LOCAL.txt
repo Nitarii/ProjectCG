@@ -1,0 +1,14 @@
+ProjectCG2 — FPS 3D v3.0 alpha
+
+1. Extrais le dossier entier.
+2. Installe Node.js LTS (https://nodejs.org/) si necessaire.
+3. Lance START_LOCAL.bat. Le navigateur ouvre http://127.0.0.1:8080/.
+4. Rejoins une equipe. Clique ensuite sur la scene pour verrouiller la souris.
+5. ZQSD/WASD mouvement ; souris pour regarder ; clic gauche tir ; clic droit visée ; Maj sprint ; X outil ; E soin ; F interaction ; G accessoire ; R recharger ; M carte ; Tab scores ; Echap menu.
+6. Garde la console serveur ouverte. Son code admin est prive.
+
+ATTENTION : c'est un prototype FPS 3D avec geometries de remplacement. Le rendu final milsim, les collisions et animations 3D completes ne sont pas encore termines.
+
+© 2026 Nitarii. Tous droits réservés.
+
+VERSION FPS 3D 3.1 : Ctrl maintenu = accroupi ; C = bascule ; R = recharger.

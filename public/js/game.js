@@ -51,7 +51,8 @@ let camera = { x:0, y:0 };
 let cameraLook = { x:0, y:0, vx:0, vy:0 };
 let viewScaleVelocity = 0;
 let mouse = { x:innerWidth/2, y:innerHeight/2, down:false, aiming:false };
-let keys = { up:false, down:false, left:false, right:false, sprint:false };
+let keys = { up:false, down:false, left:false, right:false, sprint:false, crouch:false };
+let crouchHeld=false,crouchToggle=false;
 let lastInputSent = 0;
 let lastFireSent = 0;
 let reviveHeld = false;
@@ -292,7 +293,7 @@ function connect() {
   ws.addEventListener('message', e => { let msg; try { msg = JSON.parse(e.data); } catch { return; } onMessage(msg); });
   ws.addEventListener('close', () => {
     if(fpsLocked())document.exitPointerLock?.();fpsYawInitialized=false;
-    connected = false; netPingPending=null;serverRttMs=null; mouse.down = false; mouse.aiming = false; keys={up:false,down:false,left:false,right:false,sprint:false};
+    connected = false; netPingPending=null;serverRttMs=null; mouse.down = false; mouse.aiming = false; keys={up:false,down:false,left:false,right:false,sprint:false,crouch:false};
     ui.connection.textContent = '● déconnecté'; ui.connection.style.color = '#ff6570';
     ui.menuStatus.textContent = 'Connexion perdue. Tu peux rejoindre à nouveau.';
     ui.playBtn.disabled = false; ui.playBtn.textContent = isStaticHosting?'REJOINDRE LA PARTIE':'REJOINDRE LE SERVEUR';
@@ -301,7 +302,7 @@ function connect() {
   ws.addEventListener('error', () => { ui.menuStatus.textContent = 'Impossible de joindre le serveur.'; ui.playBtn.disabled = false; });
 }
 
-function decodeRemotePlayer(a){return{id:a[0],nickname:a[1],isBot:!!a[2],teamId:a[3],squadId:a[4],x:a[5],y:a[6],vx:a[7],vy:a[8],moveSpeed:a[9],angle:a[10],hp:a[11],maxHp:a[12],alive:!!a[13],downed:!!a[14],beingRevivedBy:a[15],beingRevivedProgress:a[16],beingRevivedFast:!!a[17],weaponId:a[18],reloadingMs:a[19],medicalId:a[20],medicalUseMs:a[21],vehicleId:a[22],vehicleSeat:a[23],aiming:!!a[24],sprinting:!!a[25],pilotRole:!!a[26],pilotCountdownMs:a[27],beingHealedById:a[28],healLockMs:a[29],dragTargetId:a[30],draggedById:a[31]};}
+function decodeRemotePlayer(a){return{id:a[0],nickname:a[1],isBot:!!a[2],teamId:a[3],squadId:a[4],x:a[5],y:a[6],vx:a[7],vy:a[8],moveSpeed:a[9],angle:a[10],hp:a[11],maxHp:a[12],alive:!!a[13],downed:!!a[14],beingRevivedBy:a[15],beingRevivedProgress:a[16],beingRevivedFast:!!a[17],weaponId:a[18],reloadingMs:a[19],medicalId:a[20],medicalUseMs:a[21],vehicleId:a[22],vehicleSeat:a[23],aiming:!!a[24],sprinting:!!a[25],pilotRole:!!a[26],pilotCountdownMs:a[27],beingHealedById:a[28],healLockMs:a[29],dragTargetId:a[30],draggedById:a[31],elevation:a[32]||0,crouching:!!a[33]};}
 function decodeRadarState(r){if(!r?.packed)return r||radar;return{allies:(r.allies||[]).map(a=>({id:a[0],nickname:a[1],x:a[2],y:a[3],angle:a[4],isBot:!!a[5],downed:!!a[6],squadId:a[7]||null})),spottedEnemies:(r.spottedEnemies||[]).map(a=>({id:a[0],x:a[1],y:a[2],teamId:a[3],remainingMs:a[4]})),audible:(r.audible||[]).map(a=>({id:a[0],x:a[1],y:a[2],sprinting:!!a[3]})),vehicles:(r.vehicles||[]).map(a=>({id:a[0],type:a[1],x:a[2],y:a[3],alive:!!a[4]}))};}
 function onMessage(msg) {
   if (msg.type === 'welcome') {
@@ -499,7 +500,7 @@ function setPauseWindow(name){
   if(name==='inventory')renderLoadout();else if(name==='team'){refreshTeamPicker();renderSquadPanel();}else if(name==='admin')renderAdminPanel();
 }
 document.querySelectorAll('[data-menu-window]').forEach(btn=>btn.addEventListener('click',()=>setPauseWindow(btn.dataset.menuWindow)));
-// Each panel is a separate window, draggable on desktop.
+// Chaque panneau est une vraie fenêtre indépendante, repositionnable sur grand écran.
 const menuWindowPositions=new Map();
 for(const panel of document.querySelectorAll('.pauseWindow')){
   panel.querySelector('.windowClose')?.addEventListener('click',()=>closePauseMenu());
@@ -556,16 +557,21 @@ function openTacticalMap(){
 }
 function closeTacticalMap(){if(!tacticalMapOpen)return;tacticalMapOpen=false;tacticalMapView.dragging=false;ui.worldMap.classList.add('hidden');}
 function toggleTacticalMap(){tacticalMapOpen?closeTacticalMap():openTacticalMap();}
-function openPauseMenu(){if(!connected)return;if(fpsLocked())document.exitPointerLock();closeTacticalMap();setScoreboardHeld(false);keys={up:false,down:false,left:false,right:false,sprint:false};mouse.down=false;mouse.aiming=false;sendInput(true);ui.pauseMenu.classList.add('active');updateMatchUi();renderAdminPanel();setPauseWindow(pauseWindow||'inventory');}
+function openPauseMenu(){if(!connected)return;if(fpsLocked())document.exitPointerLock();closeTacticalMap();setScoreboardHeld(false);keys={up:false,down:false,left:false,right:false,sprint:false,crouch:false};crouchHeld=false;mouse.down=false;mouse.aiming=false;sendInput(true);ui.pauseMenu.classList.add('active');updateMatchUi();renderAdminPanel();setPauseWindow(pauseWindow||'inventory');}
 function closePauseMenu(){ui.pauseMenu.classList.remove('active');if(FPS3D&&connected)renderer3D.canvas.requestPointerLock?.();}
 
 addEventListener('keydown',e=>{
   if(isTypingTarget(e.target))return;
+  if(FPS3D&&(e.code==='ControlLeft'||e.code==='ControlRight'||e.code==='KeyC')&&!menuControlsBlocked()){
+    e.preventDefault();if(e.code==='KeyC'&&!e.repeat)crouchToggle=!crouchToggle;
+    if(e.code!=='KeyC')crouchHeld=true;keys.crouch=crouchToggle||crouchHeld;
+    if(keys.crouch)keys.sprint=false;sendInput(true);return;
+  }
   if(e.code==='Tab'){e.preventDefault();if(!e.repeat)setScoreboardHeld(true);return;}
   if(isTacticalMapKey(e)&&!e.repeat){e.preventDefault();toggleTacticalMap();return;}
   if(e.code==='Escape'&&!e.repeat){e.preventDefault();if(tacticalMapOpen){closeTacticalMap();return;}pauseOpen()?closePauseMenu():openPauseMenu();return;}
   const moveAction=movementActionForEvent(e);
-  if((moveAction||['ShiftLeft','ShiftRight'].includes(e.code))&&!menuControlsBlocked()){if(e.code.startsWith('Arrow'))e.preventDefault();if(moveAction)setMovement(moveAction,true);else{const changed=keys.sprint!==true;keys.sprint=true;if(changed)sendInput(true);}return;}
+  if((moveAction||['ShiftLeft','ShiftRight'].includes(e.code))&&!menuControlsBlocked()){if(e.code.startsWith('Arrow'))e.preventDefault();if(moveAction)setMovement(moveAction,true);else if(!keys.crouch){const changed=keys.sprint!==true;keys.sprint=true;if(changed)sendInput(true);}return;}
   if(actionControlsBlocked())return;if(e.repeat)return;
   if(e.code==='KeyX'||isToolKey(e)){if(!vehicleCombatLocked())send({type:'tool',angle:aimAngle()});return;}
   if(e.code==='KeyR'){if(!vehicleCombatLocked())send({type:'reload'});}
@@ -578,6 +584,7 @@ addEventListener('keydown',e=>{
   if(e.code==='KeyG'&&!vehicleCombatLocked()){accessoryPreviewHeld=true;return;}
 });
 addEventListener('keyup',e=>{
+  if(FPS3D&&(e.code==='ControlLeft'||e.code==='ControlRight')){crouchHeld=false;keys.crouch=crouchToggle||crouchHeld;sendInput(true);return;}
   if(e.code==='Tab'){e.preventDefault();setScoreboardHeld(false);return;}
   if(e.code==='KeyG'){if(accessoryPreviewHeld&&!actionControlsBlocked()&&!vehicleCombatLocked())send({type:'accessory',angle:aimAngle()});accessoryPreviewHeld=false;return;}
   if(e.code==='KeyF'){
@@ -587,7 +594,7 @@ addEventListener('keyup',e=>{
   }
   if(isTypingTarget(e.target))return;const moveAction=movementActionForEvent(e);if(moveAction&&!menuControlsBlocked())setMovement(moveAction,false);if(['ShiftLeft','ShiftRight'].includes(e.code)&&!menuControlsBlocked()){const changed=keys.sprint!==false;keys.sprint=false;if(changed)sendInput(true);}
 });
-addEventListener('blur',()=>{accessoryPreviewHeld=false;setScoreboardHeld(false);clearTimeout(fHoldTimer);fHoldTimer=null;fDownAt=0;if(reviveHeld||fHoldSent){reviveHeld=false;fHoldSent=false;send({type:'revive_stop'});}keys={up:false,down:false,left:false,right:false,sprint:false};mouse.down=false;mouse.aiming=false;sendInput(true);});
+addEventListener('blur',()=>{accessoryPreviewHeld=false;setScoreboardHeld(false);clearTimeout(fHoldTimer);fHoldTimer=null;fDownAt=0;if(reviveHeld||fHoldSent){reviveHeld=false;fHoldSent=false;send({type:'revive_stop'});}keys={up:false,down:false,left:false,right:false,sprint:false,crouch:false};crouchHeld=false;mouse.down=false;mouse.aiming=false;sendInput(true);});
 addEventListener('mousemove',e=>{if(fpsLocked()){fpsYaw=(fpsYaw+(e.movementX||0)*.0022)%(Math.PI*2);fpsPitch=Math.max(-1.18,Math.min(1.18,fpsPitch-(e.movementY||0)*.0019));mouse.x=innerWidth/2;mouse.y=innerHeight/2;sendInput();return;}mouse.x=e.clientX;mouse.y=e.clientY;ui.crosshair.style.left=mouse.x+'px';ui.crosshair.style.top=mouse.y+'px';updateCrosshairRange();});
 document.addEventListener('pointerlockchange',()=>{if(FPS3D&&ui.fpsInstructions)ui.fpsInstructions.classList.toggle('hidden',!connected||fpsLocked()||actionControlsBlocked());});
 addEventListener('mousedown',e=>{if(actionControlsBlocked()||vehicleCombatLocked())return;if(FPS3D&&!fpsLocked()){renderer3D.canvas.requestPointerLock?.();return;}if(e.button===0){mouse.down=true;tryFireInput('click');}if(e.button===2){mouse.aiming=true;sendInput(true);}});
@@ -636,7 +643,7 @@ function updateSelfHud(){
   const p=selfPlayer();if(!p)return;
   ui.hpText.textContent=Math.round(p.hp);ui.hpFill.style.width=`${Math.max(0,p.hp/p.maxHp*100)}%`;const w=weapons[p.weaponId];ui.weaponName.textContent=(w?.name||p.weaponId).toUpperCase();ui.ammoText.textContent=p.ammo;ui.magText.textContent=`/${p.mag} · ${p.reserveAmmo||0} réserve`;
   if(p.vehicleId&&mouse.aiming){mouse.aiming=false;sendInput(true);}const veh=p.vehicleId?worldVehicles.find(v=>v.id===p.vehicleId):null,vehName=veh?.type==='jeep'?'JEEP':'QUAD',isPassenger=String(p.vehicleSeat||'').startsWith('passenger');
-  ui.reloadText.textContent=p.vehicleSeat==='driver'?`${vehName} · CONDUCTEUR · armes/outils désactivés`:isPassenger?`${vehName} · PASSAGER · armes/outils désactivés`:p.reloadingMs>0?`Rechargement ${(p.reloadingMs/1000).toFixed(1)} s`:(p.sprinting?'Tir impossible en sprint':((p.reserveAmmo||0)<=0&&p.ammo<=0?'PLUS DE MUNITIONS':''));
+  ui.reloadText.textContent=p.vehicleSeat==='driver'?`${vehName} · CONDUCTEUR · armes/outils désactivés`:isPassenger?`${vehName} · PASSAGER · armes/outils désactivés`:p.reloadingMs>0?`Rechargement ${(p.reloadingMs/1000).toFixed(1)} s`:(p.sprinting?'Tir impossible en sprint':p.crouching?'ACCROUPI · PRÉCISION AMÉLIORÉE':((p.reserveAmmo||0)<=0&&p.ammo<=0?'PLUS DE MUNITIONS':''));
   ui.staminaFill.style.width=`${Math.max(0,Math.min(100,p.stamina/p.maxStamina*100))}%`;ui.staminaText.textContent=`${Math.round(p.stamina)}%${p.sprinting?' · SPRINT':''}`;ui.aimText.textContent=p.vehicleId?'COMBAT DÉSACTIVÉ EN VÉHICULE':(mouse.aiming?'VISÉE · précision +':'TIR À LA HANCHE');
   const med=medicalItems.find(m=>m.id===p.medicalId)||medicalItems[0];if(ui.medicalName)ui.medicalName.textContent=med?.name||'Soin';if(ui.medicalText)ui.medicalText.textContent=p.medicalUseMs>0?`${p.medicalTargetId&&p.medicalTargetId!==p.id?'Soin allié':'Application'} ${(p.medicalUseMs/1000).toFixed(1)} s`:`${p.medicalCharges||0}/${med?.maxCharges||0} · ${med?.heal||0} PV`;
   const tool=tools.find(t=>t.id===p.toolId),acc=accessories.find(a=>a.id===p.accessoryId);if(ui.toolName)ui.toolName.textContent=tool?.name||'Aucun outil';if(ui.toolText){if((p.toolCooldownMs||0)>0)ui.toolText.textContent=`Recharge ${(p.toolCooldownMs/1000).toFixed(1)} s`;else if(p.toolId==='defib')ui.toolText.textContent='Prêt · maintenir F';else if(p.toolId==='none')ui.toolText.textContent='Non équipé';else ui.toolText.textContent='Prêt · X';}if(ui.accessoryName)ui.accessoryName.textContent=acc?.name||'Aucun accessoire';if(ui.accessoryText)ui.accessoryText.textContent=p.accessoryId==='none'?'Non équipé':`${p.accessoryCharges||0}/${p.accessoryMax||acc?.maxCharges||1} · G`;
@@ -690,6 +697,11 @@ function updateParticles(dt){
 
 function clientPlayerCanStandAt(x,y,r=27){
   if(!map||x<r||y<r||x>map.width-r||y>map.height-r)return false;
+  const me=selfPlayer();
+  if((me?.elevation||0)>75){
+    const b=(map.structures||[]).find(v=>v.levels===2&&(me.rx??me.x)>v.x+18&&(me.rx??me.x)<v.x+v.w-18&&(me.ry??me.y)>v.y+18&&(me.ry??me.y)<v.y+v.h-18);
+    if(b&&(x<b.x+18||x>b.x+b.w-18||y<b.y+18||y>b.y+b.h-18))return false;
+  }
   return !obstaclesNearClient(x,y,r+10).some(o=>circleRectCollision(x,y,r,o));
 }
 function predictSelfRender(me,dt){
@@ -697,8 +709,8 @@ function predictSelfRender(me,dt){
   if(!me.alive||me.downed||me.vehicleId||(match?.prepMs||0)>0){const b=1-Math.exp(-14*dt);me.rx+=(authX-me.rx)*b;me.ry+=(authY-me.ry)*b;return;}
   const sx=(keys.right?1:0)-(keys.left?1:0),sy=(keys.down?1:0)-(keys.up?1:0);let dx=FPS3D?(-sy*Math.cos(fpsYaw)-sx*Math.sin(fpsYaw)):sx+sy,dy=FPS3D?(-sy*Math.sin(fpsYaw)+sx*Math.cos(fpsYaw)):-sx+sy;const moving=!!(dx||dy);
   if(moving){const len=Math.hypot(dx,dy)||1;dx/=len;dy/=len;}
-  const healLocked=!!me.beingHealedById;const wantsSprint=moving&&keys.sprint&&!mouse.aiming&&!me.dragTargetId&&!(me.medicalUseMs>0)&&!healLocked&&(me.stamina||0)>.5;
-  let speed=wantsSprint?410:255;if(me.dragTargetId)speed*=.68;if(me.medicalUseMs>0)speed*=.62;if(healLocked)speed=0;
+  const healLocked=!!me.beingHealedById;const wantsSprint=moving&&keys.sprint&&!keys.crouch&&!mouse.aiming&&!me.dragTargetId&&!(me.medicalUseMs>0)&&!healLocked&&(me.stamina||0)>.5;
+  let speed=wantsSprint?410:255;if(me.dragTargetId)speed*=.68;if(me.medicalUseMs>0)speed*=.62;if(keys.crouch)speed*=.56;if(healLocked)speed=0;
   const nx=me.rx+dx*speed*dt,ny=me.ry+dy*speed*dt,r=me.hitRadius||27;
   if(clientPlayerCanStandAt(nx,me.ry,r))me.rx=nx;if(clientPlayerCanStandAt(me.rx,ny,r))me.ry=ny;
   const err=Math.hypot(authX-me.rx,authY-me.ry);

@@ -211,7 +211,7 @@ const server = http.createServer((req, res) => {
   if (!['GET','HEAD'].includes(req.method || 'GET')) { res.writeHead(405, {'allow':'GET, HEAD'}); return res.end('Method not allowed'); }
   if (urlPath === '/health') {
     res.writeHead(200, { 'content-type':'application/json; charset=utf-8', 'cache-control':'no-store' });
-    return res.end(JSON.stringify({ ok:true, version:'3.0.0-alpha', humans:clients.size, players:players.size, uptime:Math.round(process.uptime()), map:{ width:MAP.width, height:MAP.height }, teams:teamCounts(), perf:{...perfStats} }));
+    return res.end(JSON.stringify({ ok:true, version:'3.1.0-alpha', humans:clients.size, players:players.size, uptime:Math.round(process.uptime()), map:{ width:MAP.width, height:MAP.height }, teams:teamCounts(), perf:{...perfStats} }));
   }
   let relative = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
   const publicRoot = path.resolve(PUBLIC_DIR);
@@ -238,6 +238,7 @@ const wss = new WebSocketServer({ noServer:true, maxPayload:32 * 1024 });
 server.on('upgrade', (req, socket, head) => {
   const pathname = new URL(req.url || '/', 'http://localhost').pathname;
   if (pathname !== '/ws') return socket.destroy();
+  // Les clients GitHub Pages sont cross-origin; les autres navigateurs doivent venir de l'hôte même.
   const origin = req.headers.origin;
   if (origin) {
     let accepted = ALLOWED_ORIGINS.has(origin);
@@ -306,8 +307,35 @@ function inTeamBase(teamId,x,y,radius=BASE_RADIUS){return distanceToBase(teamId,
 function inOwnBase(p,radius=BASE_RADIUS){return !!p&&inTeamBase(p.teamId,p.x,p.y,radius);}
 function inEnemyBase(teamId,x,y,radius=BASE_RADIUS){return TEAM_IDS.some(id=>id!==teamId&&inTeamBase(id,x,y,radius));}
 function prepActive(now=Date.now()){return now<(match.prepUntil||0);}
+// Floors are server-authoritative, not visual-only. The staircase occupies a
+// dedicated walkable strip; the same XY coordinates may represent two floors.
+const FLOOR_HEIGHT=116;
+function structureAt(x,y){
+  return MAP.structures.find(b=>b.levels===2&&x>b.x+18&&x<b.x+b.w-18&&y>b.y+18&&y<b.y+b.h-18)||null;
+}
+function updatePlayerElevation(p){
+  if(!p.fpsMode||p.vehicleId||!p.alive){p.elevation=0;p.upperStructureId=null;p.stairActiveId=null;return;}
+  const b=structureAt(p.x,p.y);
+  if(!b){p.elevation=0;p.upperStructureId=null;p.stairActiveId=null;return;}
+  const st=b.stair,inStair=p.x>st.x&&p.x<st.x+st.w&&p.y>st.y&&p.y<st.y+st.h;
+  if(inStair){
+    const t=Math.max(0,Math.min(1,(p.y-st.y)/st.h));
+    if(t<.20&&!p.upperStructureId)p.stairActiveId=b.id;
+    if(p.upperStructureId===b.id||p.stairActiveId===b.id){
+      p.elevation=FLOOR_HEIGHT*t;
+      if(t>.93){p.upperStructureId=b.id;p.stairActiveId=null;}
+      else if(t<.08&&p.upperStructureId===b.id){p.upperStructureId=null;p.stairActiveId=null;}
+      return;
+    }
+  }
+  p.elevation=p.upperStructureId===b.id?FLOOR_HEIGHT:0;
+}
 function playerCanStandAt(p,x,y,now=Date.now()){
   if(!canStandAt(x,y,p.radius||24))return false;
+  // No stepping off a second-floor edge through a ground-level door.
+  if(p.upperStructureId){const b=MAP.structures.find(v=>v.id===p.upperStructureId);
+    if(b&&(x<b.x+18||x>b.x+b.w-18||y<b.y+18||y>b.y+b.h-18))return false;}
+
   if(inEnemyBase(p.teamId,x,y))return false;
   if(prepActive(now)&&!inTeamBase(p.teamId,x,y,BASE_RADIUS-18))return false;
   return true;
@@ -581,7 +609,8 @@ function makeHumanPlayer(ws, profileKey, profile, teamId) {
     id:String(nextPlayerId++), ws, profileKey, nickname:profile.nickname, isBot:false, botPersonality:null,
     teamId:safeTeam(teamId), x:spawn.x, y:spawn.y, vx:0, vy:0, radius:24, hitRadius:27, angle:0,
     hp:armor ? 125 : 100, maxHp:armor ? 125 : 100, alive:true, downed:false, downedAt:0, downedMeta:null, giveUpAt:0, bleedoutAt:0,
-    input:{ up:false, down:false, left:false, right:false, sprint:false },
+    input:{ up:false, down:false, left:false, right:false, sprint:false, crouch:false },
+    crouching:false,elevation:0,upperStructureId:null,stairActiveId:null,
     aiming:false, sprinting:false, stamina:100, maxStamina:100, staminaRegenAt:0,
     weaponId, equipmentIds, accessoryId, accessoryCharges:accessory.maxCharges||0, toolId, toolReadyAt:0, medicalId, medicalCharges:medical.maxCharges, medicalUseUntil:0,
     healOverTimeUntil:0, nextHealOverTimeAt:0, staminaBuffUntil:0,
@@ -806,7 +835,7 @@ wss.on('connection', ws => {
       }
       case 'input': {
         if (msg.keys && typeof msg.keys === 'object') {
-          p.input.up=!!msg.keys.up; p.input.down=!!msg.keys.down; p.input.left=!!msg.keys.left; p.input.right=!!msg.keys.right; p.input.sprint=!!msg.keys.sprint;
+          p.input.up=!!msg.keys.up; p.input.down=!!msg.keys.down; p.input.left=!!msg.keys.left; p.input.right=!!msg.keys.right; p.input.sprint=!!msg.keys.sprint; p.input.crouch=!!msg.keys.crouch;
         }
         p.aiming=p.vehicleId?false:!!msg.aiming;
         if (Number.isFinite(msg.angle)) p.angle=normalizeAngle(msg.angle);
@@ -951,7 +980,7 @@ const NAV_CELL=140;
 const NAV_CLEARANCE=56;
 function botNavRadius(bot){return Math.max(NAV_CLEARANCE,(bot.radius||24)+24);}
 let NAV_GRID=null;
-// Reusable A* arrays. Must be declared before bots request their first path.
+// Reuse A* work buffers across bot navigation requests.
 let NAV_SCRATCH=null;
 function getNavGrid(){
   if(NAV_GRID)return NAV_GRID;
@@ -1172,16 +1201,17 @@ function integratePlayer(p,dt,now){
   }
   const healLocked=(p.healLockUntil||0)>now&&!!p.beingHealedById;if(healLocked){dx=0;dy=0;p.sprinting=false;}
   const moving=!!(dx||dy); if(moving){const len=Math.hypot(dx,dy);dx/=len;dy/=len;if(p.reviveTargetId)cancelRevive(p);}
-  const canSprint=moving&&p.input.sprint&&!p.aiming&&!p.dragTargetId&&!p.medicalUseUntil&&!healLocked&&p.stamina>0.5;
+  p.crouching=!!p.input.crouch&&p.alive&&!p.vehicleId&&!p.downed;
+  const canSprint=moving&&p.input.sprint&&!p.crouching&&!p.aiming&&!p.dragTargetId&&!p.medicalUseUntil&&!healLocked&&p.stamina>0.5;
   p.sprinting=canSprint;
   if((p.staminaBuffUntil||0)>now){p.stamina=p.maxStamina;}
   else if(p.sprinting){p.stamina=Math.max(0,p.stamina-25*dt);p.staminaRegenAt=now+700;if(p.stamina<=0.5)p.sprinting=false;}
   else if(now>=p.staminaRegenAt)p.stamina=Math.min(p.maxStamina,p.stamina+18*dt);
-  const baseSpeed=p.sprinting?410:255;let speed=p.dragTargetId?baseSpeed*.68:baseSpeed;if(p.medicalUseUntil>now)speed*=.62;if(healLocked)speed=0; p.vx=dx*speed;p.vy=dy*speed;
+  const baseSpeed=p.sprinting?410:255;let speed=p.dragTargetId?baseSpeed*.68:baseSpeed;if(p.medicalUseUntil>now)speed*=.62;if(p.crouching)speed*=.56;if(healLocked)speed=0; p.vx=dx*speed;p.vy=dy*speed;
   const oldX=p.x,oldY=p.y,nx=p.x+p.vx*dt,ny=p.y+p.vy*dt;
   if(playerCanStandAt(p,nx,p.y,now))p.x=nx;
   if(playerCanStandAt(p,p.x,ny,now))p.y=ny;
-  p.actualSpeed=dt>0?Math.hypot(p.x-oldX,p.y-oldY)/dt:0;updateDraggedBody(p);
+  p.actualSpeed=dt>0?Math.hypot(p.x-oldX,p.y-oldY)/dt:0;updatePlayerElevation(p);updateDraggedBody(p);
   const w=weaponFor(p);p.bloom=Math.max(0,p.bloom-w.bloomRecovery*dt);
 }
 function weaponFor(p){return WEAPONS[p.weaponId]||WEAPONS.pistol;}
@@ -1189,13 +1219,35 @@ function playerLevel(p){return p.isBot?p.botLevel:levelFromXp(profiles[p.profile
 function startReload(p,now){
   if(!p.alive||p.vehicleId)return false;const w=weaponFor(p);
   if(p.ammo>=w.mag||p.reloadingUntil>now||(p.reserveAmmo||0)<=0)return false;
-  const quick=playerHasEquipment(p,'fastreload');
-  p.reloadingUntil=now+2000*(quick?.8:1);p.bloom=0;cancelMedicalUse(p);
-  effects.push({id:String(nextEventId++),type:'mag',shooterId:p.id,x:p.x,y:p.y,angle:p.angle,weaponId:w.id,at:now});return true;
+  const multiplier=playerHasEquipment(p,'fastreload')?.8:1;
+  p.reloadMode=w.reloadMode||'magazine';p.reloadStartedAt=now;
+  p.reloadShellStepMs=0;p.reloadNextShellAt=0;
+  if(p.reloadMode==='shell'){
+    const shells=Math.min(w.mag-p.ammo,p.reserveAmmo);
+    p.reloadShellStepMs=Math.round(w.reloadMs*multiplier);
+    p.reloadNextShellAt=now+Math.round(440*multiplier)+p.reloadShellStepMs;
+    p.reloadDurationMs=Math.round(440*multiplier)+p.reloadShellStepMs*shells;
+  }else p.reloadDurationMs=Math.round(w.reloadMs*multiplier);
+  p.reloadingUntil=now+p.reloadDurationMs;
+  p.bloom=0;cancelMedicalUse(p);
+  if(p.reloadMode!=='shell')effects.push({id:String(nextEventId++),type:'mag',shooterId:p.id,x:p.x,y:p.y,angle:p.angle,weaponId:w.id,at:now});
+  return true;
 }
 function finishReloadIfNeeded(p,now){
-  if(!p.reloadingUntil||now<p.reloadingUntil)return;
-  p.reloadingUntil=0;const w=weaponFor(p),need=Math.max(0,w.mag-p.ammo),take=Math.min(need,Math.max(0,p.reserveAmmo||0));
+  if(!p.reloadingUntil)return;
+  const w=weaponFor(p);
+  if(p.reloadMode==='shell'){
+    let safety=0;
+    while(p.reloadNextShellAt&&now>=p.reloadNextShellAt&&p.ammo<w.mag&&p.reserveAmmo>0&&safety++<20){
+      p.ammo++;p.reserveAmmo--;p.reloadNextShellAt+=p.reloadShellStepMs;
+    }
+    if(p.ammo>=w.mag||p.reserveAmmo<=0||now>=p.reloadingUntil){
+      p.reloadingUntil=0;p.reloadNextShellAt=0;
+    }
+    return;
+  }
+  if(now<p.reloadingUntil)return;
+  p.reloadingUntil=0;const need=Math.max(0,w.mag-p.ammo),take=Math.min(need,Math.max(0,p.reserveAmmo||0));
   p.ammo+=take;p.reserveAmmo=Math.max(0,(p.reserveAmmo||0)-take);
 }
 function setWeapon(p,id){
@@ -1492,11 +1544,17 @@ function updateLoadout(p,msg,now){
 }
 function currentSpread(p,w){
   const moving=Math.hypot(p.vx,p.vy)>15;const base=p.aiming?w.aimSpread:w.hipSpread;
-  const movementPenalty=moving?w.moveSpread*(p.aiming?.45:1):0;return base+movementPenalty+p.bloom;
+  const movementPenalty=moving?w.moveSpread*(p.aiming?.45:1):0;return (base+movementPenalty)*(p.crouching?.76:1)+p.bloom;
 }
 function randomSpread(max){return((Math.random()+Math.random())-1)*max;}
 function tryFire(p,now,extraError=0){
-  if(!p.alive||p.sprinting||p.vehicleId)return false;finishReloadIfNeeded(p,now);if(p.reloadingUntil>now)return false;
+  if(!p.alive||p.sprinting||p.vehicleId)return false;
+  finishReloadIfNeeded(p,now);
+  // A pump shotgun may interrupt the per-shell reload once at least one shell is loaded.
+  if(p.reloadingUntil>now){
+    if(p.reloadMode==='shell'&&p.ammo>0){p.reloadingUntil=0;p.reloadNextShellAt=0;}
+    else return false;
+  }
   const w=weaponFor(p);if(p.ammo<=0){startReload(p,now);return false;}
   const minGap=1000/w.fireRate;if(now-p.lastShotAt<minGap)return false;
   p.lastShotAt=now;cancelMedicalUse(p);cancelRevive(p);p.ammo--;const spread=currentSpread(p,w)+extraError;const groupId=String(nextEventId++);
@@ -1551,7 +1609,7 @@ function resolveBallistic3D(shooter,angle,weapon,now){
   const dx=Math.cos(angle),dy=Math.sin(angle),velocity=Math.max(4000,(Number(weapon.muzzleVelocity)||7500)*3);
   const pitch=Math.max(-1.18,Math.min(1.18,Number(shooter.pitch)||0));
   const yawScale=Math.max(.38,Math.cos(pitch)),horizontalSpeed=velocity*yawScale;
-  const high=54,range=Math.hypot(MAP.width,MAP.height);
+  const high=(shooter.elevation||0)+(shooter.crouching?34:54),range=Math.hypot(MAP.width,MAP.height);
   const bulletZ=d=>high+Math.tan(pitch)*d-.5*WORLD_GRAVITY*(d/horizontalSpeed)**2;
   const endGround=(()=>{let lo=0,hi=range;for(let i=0;i<30;i++){const mid=(lo+hi)*.5;if(bulletZ(mid)>0)lo=mid;else hi=mid;}return hi;})();
   let end=Math.min(range,endGround),target=null,targetVehicle=null,wallHit=false;
@@ -1561,10 +1619,21 @@ function resolveBallistic3D(shooter,angle,weapon,now){
     const d=rayRectDistance(shooter.x,shooter.y,dx,dy,o);
     if(d>=0&&d<end&&bulletZ(d)>=0&&bulletZ(d)<=o.height)candidates.push({d,kind:'wall'});
   }
+  // Floor slabs stop cross-floor shots; stairwells remain open.
+  for(const b of MAP.structures){
+    if(b.levels!==2)continue;
+    const prevZ=bulletZ(0),endZ=bulletZ(end);
+    if((prevZ-116)*(endZ-116)>0)continue;
+    let lo=0,hi=end;
+    for(let i=0;i<18;i++){const mid=(lo+hi)/2;if((bulletZ(mid)-116)*(prevZ-116)>0)lo=mid;else hi=mid;}
+    const at=(lo+hi)/2,x=shooter.x+dx*at,y=shooter.y+dy*at,st=b.stair;
+    if(x>b.x+20&&x<b.x+b.w-20&&y>b.y+20&&y<b.y+b.h-20&&
+      !(x>st.x&&x<st.x+st.w&&y>st.y&&y<st.y+st.h))candidates.push({d:at,kind:'wall'});
+  }
   for(const p of players.values()){
     if(!p.alive||p.id===shooter.id)continue;
     const d=rayCircleDistance(shooter.x,shooter.y,dx,dy,p.x,p.y,p.hitRadius||27);
-    if(d<end&&bulletZ(d)>=2&&bulletZ(d)<=69)candidates.push({d,kind:'player',obj:p});
+    if(d<end&&bulletZ(d)>=(p.elevation||0)+2&&bulletZ(d)<=(p.elevation||0)+(p.crouching?48:69))candidates.push({d,kind:'player',obj:p});
   }
   for(const v of vehicles){
     if(!v.alive||v.id===shooter.vehicleId)continue;
@@ -1716,7 +1785,7 @@ function publicPlayer(p,now){
     medicalId:p.medicalId||'bandage',medicalCharges:p.medicalCharges||0,medicalUseMs:Math.max(0,(p.medicalUseUntil||0)-now),medicalTargetId:p.medicalTargetId||null,beingHealedById:p.beingHealedById||null,healLockMs:Math.max(0,(p.healLockUntil||0)-now),
     healStimMs:Math.max(0,(p.healOverTimeUntil||0)-now),staminaStimMs:Math.max(0,(p.staminaBuffUntil||0)-now),
     vehicleId:p.vehicleId||null,vehicleSeat:p.vehicleSeat||null,dragTargetId:p.dragTargetId||null,draggedById:p.draggedById||null,lifeId:p.lifeId||1,
-    ammo:p.ammo,mag:w.mag,reserveAmmo:p.reserveAmmo||0,reserveMax:p.reserveMax||w.mag*4,reloadingMs:Math.max(0,p.reloadingUntil-now),blindedMs:Math.max(0,(p.blindedUntil||0)-now),
+    ammo:p.ammo,mag:w.mag,reserveAmmo:p.reserveAmmo||0,reserveMax:p.reserveMax||w.mag*4,reloadingMs:Math.max(0,p.reloadingUntil-now),reloadTotalMs:p.reloadDurationMs||0,elevation:Math.round(p.elevation||0),crouching:!!p.crouching,blindedMs:Math.max(0,(p.blindedUntil||0)-now),
     reviveTargetId:p.reviveTargetId||null,reviveProgress:p.reviveTargetId&&p.reviveDuration?Math.max(0,Math.min(1,(now-p.reviveStartedAt)/p.reviveDuration)):0,
     level:playerLevel(p),aiming:p.aiming,sprinting:p.sprinting,stamina:Math.round(p.stamina*10)/10,maxStamina:p.maxStamina,
     spread:currentSpread(p,w),fov:visionFov(p),matchKills:p.matchKills||0,matchAssists:p.matchAssists||0,matchDeaths:p.matchDeaths||0,matchMoneyNet:p.matchMoneyNet||0,isAdmin:!!p.isAdmin,godMode:!!p.godMode,pilotRole:!!p.pilotRole,pilotCountdownMs:p.pilotRole&&p.vehicleId?Math.max(0,((vehicles.find(v=>v.id===p.vehicleId)?.shuttleDepartAt)||0)-now):0
@@ -1730,7 +1799,7 @@ function publicRemotePlayer(p,now){
     x:Math.round(p.x),y:Math.round(p.y),vx:Math.round(p.vx||0),vy:Math.round(p.vy||0),moveSpeed:Math.round(p.actualSpeed||0),angle:Math.round((p.angle||0)*1000)/1000,
     hp:Math.max(0,Math.round(p.hp)),maxHp:p.maxHp,alive:!!p.alive,downed:!!p.downed,
     beingRevivedBy:revive?.by||null,beingRevivedProgress:revive?.progress||0,beingRevivedFast:!!revive?.fast,
-    weaponId:p.weaponId,reloadingMs:Math.max(0,(p.reloadingUntil||0)-now),medicalUseMs:Math.max(0,(p.medicalUseUntil||0)-now),medicalTargetId:p.medicalTargetId||null,
+    weaponId:p.weaponId,reloadingMs:Math.max(0,(p.reloadingUntil||0)-now),elevation:Math.round(p.elevation||0),crouching:!!p.crouching,medicalUseMs:Math.max(0,(p.medicalUseUntil||0)-now),medicalTargetId:p.medicalTargetId||null,
     vehicleId:p.vehicleId||null,vehicleSeat:p.vehicleSeat||null,dragTargetId:p.dragTargetId||null,draggedById:p.draggedById||null,
     aiming:!!p.aiming,sprinting:!!p.sprinting,pilotRole:!!p.pilotRole,pilotCountdownMs:p.pilotRole&&p.vehicleId?Math.max(0,((vehicles.find(v=>v.id===p.vehicleId)?.shuttleDepartAt)||0)-now):0
   };
@@ -1740,7 +1809,7 @@ function publicRemotePlayerWire(p,now){
     p.id,p.nickname,p.isBot?1:0,p.teamId,p.squadId||null,Math.round(p.x),Math.round(p.y),Math.round(p.vx||0),Math.round(p.vy||0),Math.round(p.actualSpeed||0),Math.round((p.angle||0)*1000)/1000,
     Math.max(0,Math.round(p.hp)),p.maxHp,p.alive?1:0,p.downed?1:0,revive?.by||null,Math.round((revive?.progress||0)*100)/100,revive?.fast?1:0,p.weaponId,Math.max(0,(p.reloadingUntil||0)-now),
     p.medicalId||'bandage',Math.max(0,(p.medicalUseUntil||0)-now),p.vehicleId||null,p.vehicleSeat||null,p.aiming?1:0,p.sprinting?1:0,p.pilotRole?1:0,p.pilotRole&&p.vehicleId?Math.max(0,((vehicles.find(v=>v.id===p.vehicleId)?.shuttleDepartAt)||0)-now):0,
-    p.beingHealedById||null,Math.max(0,(p.healLockUntil||0)-now),p.dragTargetId||null,p.draggedById||null
+    p.beingHealedById||null,Math.max(0,(p.healLockUntil||0)-now),p.dragTargetId||null,p.draggedById||null,Math.round(p.elevation||0),p.crouching?1:0
   ];
 }
 function publicVehicleForViewer(v,viewer,now){
@@ -2397,13 +2466,13 @@ function runGeometrySelfTests(){
   assert.strictEqual(ammoTarget.accessoryCharges,1,'A different ammo crate could not replenish accessory stock');
   players.delete(ammoOwner.id);players.delete(ammoTarget.id);supplyCrates.splice(0,supplyCrates.length);
 
-  // Regression: first A* request must initialize and then reuse its scratch buffers.
-  const firstNavScratch=navScratch(64);
-  assert.strictEqual(firstNavScratch.total,64,'Bot navigation scratch allocation failed');
-  firstNavScratch.gScore[0]=123;
-  const reusedNavScratch=navScratch(64);
-  assert.strictEqual(reusedNavScratch,firstNavScratch,'Bot navigation scratch should be reused');
-  assert.strictEqual(reusedNavScratch.gScore[0],Infinity,'Bot navigation scratch was not reset');
+  // Regression: A* scratch must initialize on the very first bot path request.
+  const navScratchFirst=navScratch(64);
+  assert.strictEqual(navScratchFirst.total,64,'Bot navigation scratch initialization failed');
+  navScratchFirst.gScore[0]=123;
+  const navScratchReused=navScratch(64);
+  assert.strictEqual(navScratchReused,navScratchFirst,'Bot navigation scratch buffers not reused');
+  assert.strictEqual(navScratchReused.gScore[0],Infinity,'Bot navigation scratch buffers not reset');
   assert.strictEqual(navScratch(96).total,96,'Bot navigation scratch resize failed');
 
   // Navigation bots : ajoute temporairement un long mur dans une zone vide et vérifie qu'un bot le contourne.
@@ -2534,14 +2603,31 @@ function runGeometrySelfTests(){
   // Escouades humaines : rejoindre / quitter sans modifier l'équipe.
   const squadHuman={id:'squad-human',nickname:'Squad',isBot:false,teamId:'alpha',squadId:null,ws:null};assert(handleSquadAction(squadHuman,{action:'join',squadId:'squad2'}),'Squad join rejected');assert.strictEqual(squadHuman.squadId,'squad2');assert(handleSquadAction(squadHuman,{action:'leave'}),'Squad leave rejected');assert.strictEqual(squadHuman.squadId,null);
 
+  // Multi-storey access: an authenticated FPS player climbs the staircase, remains
+  // on the upper floor, and can descend again without jumping through the slab.
+  const multi=MAP.structures.find(b=>b.levels===2),stair=multi.stair;
+  const walker={fpsMode:true,alive:true,vehicleId:null,upperStructureId:null,stairActiveId:null,elevation:0,x:stair.x+stair.w/2,y:stair.y+3};
+  updatePlayerElevation(walker);assert(walker.elevation<8,'stair bottom must be near ground');
+  walker.y=stair.y+stair.h*.60;updatePlayerElevation(walker);
+  assert(walker.elevation>40&&walker.elevation<90,'player cannot ascend stair ramp');
+  walker.y=stair.y+stair.h*.96;updatePlayerElevation(walker);
+  assert.strictEqual(walker.upperStructureId,multi.id,'upper floor was not reached');
+  walker.y=stair.y+stair.h+4;updatePlayerElevation(walker);
+  assert.strictEqual(walker.elevation,FLOOR_HEIGHT,'upper floor height did not persist');
+  assert.strictEqual(playerCanStandAt({...walker,teamId:'alpha',radius:24},multi.x-30,walker.y,ffNow+100000),false,'upper floor allows falling out through exterior wall');
+  walker.y=stair.y+stair.h*.5;updatePlayerElevation(walker);assert(walker.elevation>40&&walker.elevation<90,'stair descent did not change elevation');
+  walker.y=stair.y+2;updatePlayerElevation(walker);assert.strictEqual(walker.upperStructureId,null,'staircase descent did not return to ground');
+
   // Rechargement : toutes les armes doivent émettre un chargeur tombant ; le client masque le chargeur porté tant que reloadingMs > 0.
   for(const wid of Object.keys(WEAPONS)){
     const rw=WEAPONS[wid],rp={id:`reload-${wid}`,nickname:'ReloadTest',isBot:true,teamId:'alpha',x:ffBaseX+1100,y:ffBaseY+1100,radius:24,hitRadius:27,hp:100,maxHp:100,alive:true,sprinting:false,vehicleId:null,weaponId:wid,ammo:Math.max(0,rw.mag-1),reserveAmmo:rw.mag*2,reserveMax:rw.mag*4,reloadingUntil:0,lastShotAt:0,bloom:0,angle:0,equipmentIds:[],medicalUseUntil:0,medicalTargetId:null,reviveTargetId:null,input:{},brain:{}};
     const beforeEffects=effects.length;assert(startReload(rp,ffNow+7000),`Reload did not start for ${wid}`);
-    const magFx=effects.slice(beforeEffects).find(e=>e.type==='mag'&&e.weaponId===wid);assert(magFx,`No magazine drop event for ${wid}`);assert(rp.reloadingUntil>ffNow+7000,`Reload duration missing for ${wid}`);
+    assert(rp.reloadingUntil>ffNow+7000,`Reload duration missing for ${wid}`);
+    const initialAmmo=rp.ammo;finishReloadIfNeeded(rp,rp.reloadingUntil+5);assert(rp.ammo>initialAmmo,`Reload ammunition did not transfer for ${wid}`);
+    const magFx=effects.slice(beforeEffects).find(e=>e.type==='mag'&&e.weaponId===wid);assert(wid==='shotgun'?!magFx:!!magFx,`Incorrect reload visual effect for ${wid}`);
   }
 
-  console.log('ProjectCG2 v3.0-alpha self-test: OK (murs, hitbox, arsenal, tracers, tir allié, outils, véhicules, bases, soins, réanimation, économie, zone de guerre, point de contrôle, navigation).');
+  console.log('ProjectCG2 v3.1-alpha self-test: OK (murs, hitbox, arsenal, tracers, tir allié, outils, véhicules, bases, soins, réanimation, économie, zone de guerre, point de contrôle, navigation).');
 }
 if(process.env.PROJECTPC_VERIFY_GEOMETRY==='1'||process.env.ISOFRONT_VERIFY_GEOMETRY==='1'){runGeometrySelfTests();if(process.env.PROJECTPC_VERIFY_ONLY==='1')process.exit(0);}
 

@@ -16,6 +16,8 @@ const checks = [
   ['--check', 'scripts/test-network.js'],
   ['--check', 'scripts/test-fps3d.js'],
   ['--check', 'public/js/game.js'],
+  ['--check', 'public/js/fps-weapons.js'],
+  ['--check', 'scripts/test-fps-features.js'],
   ['--check', 'public/js/fps3d.js'],
 ];
 for (const args of checks) {
@@ -44,4 +46,6 @@ const net = spawnSync(process.execPath, ['scripts/test-network.js'], {cwd:root,s
 if(net.status !== 0)process.exit(net.status||1);
 const render=spawnSync(process.execPath,['scripts/test-fps3d.js'],{cwd:root,stdio:'inherit'});
 if(render.status !== 0)process.exit(render.status||1);
+const v31=spawnSync(process.execPath,['scripts/test-fps-features.js'],{cwd:root,stdio:'inherit'});
+if(v31.status!==0)process.exit(v31.status||1);
 console.log('ProjectPC verify: OK');

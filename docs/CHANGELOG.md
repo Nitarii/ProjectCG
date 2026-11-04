@@ -1,3 +1,13 @@
+## v3.1.0-alpha — Rechargements par arme, accroupissement et structures 3D
+
+- 13 rigs d'armes procéduraux avec séquences de rechargement différentes et synchronisation serveur.
+- Fusil à pompe à cartouches successives, interruptible lorsque la chambre dispose d'une munition.
+- Accroupissement Ctrl/C : vitesse, précision, hauteur de visée et hitbox ajustées.
+- Herbe et buissons déterministes LOD ; ~1 200 arbres solides côté serveur.
+- 320 bâtiments à véritables ouvertures, espaces intérieurs et 53 structures à deux niveaux avec escaliers.
+- Collisions avec murs et planchers, réplication des hauteurs d'acteurs et tirs tenant compte de la hauteur.
+- Tests de régression sur les escaliers, 13 armes, carte, protocole réseau, moteur WebGL simulé.
+
 # Changelog
 
 ## v2.6 — audit performance / réseau / menus

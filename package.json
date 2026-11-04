@@ -1,6 +1,6 @@
 {
   "name": "projectpc-point-control",
-  "version": "3.0.0-alpha",
+  "version": "3.1.0-alpha",
   "private": true,
   "description": "ProjectPC - Point Control, prototype FPS 3D tactique multijoueur avec serveur autoritaire et progression persistante.",
   "main": "server.js",
@@ -11,7 +11,8 @@
     "check": "node --check server.js && node --check src/server/index.js && node --check public/js/game.js",
     "stress": "node scripts/stress-local.js",
     "test:network": "node scripts/test-network.js",
-    "test:render": "node scripts/test-fps3d.js"
+    "test:render": "node scripts/test-fps3d.js",
+    "test:features": "node scripts/test-fps-features.js"
   },
   "license": "UNLICENSED"
 }

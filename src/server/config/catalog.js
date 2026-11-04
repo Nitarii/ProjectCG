@@ -16,6 +16,19 @@ const WEAPONS = {
   heavybolt: { id:'heavybolt', name:'Fusil à verrou Magnum', category:'sniper', level:13, damage:128, fireRate:0.28, range:1450, mag:5, reload:2.0, pellets:1, automatic:false, hipSpread:0.092, aimSpread:0.0025, moveSpread:0.038, bloomPerShot:0, maxBloom:0, bloomRecovery:0.20, tracer:true, muzzleVelocity:9400 }
 };
 
+// Reload timing is authoritative on the server and weapon-specific in the view-model.
+// Shotguns reload individually and may resume firing between shells.
+const RELOAD_CONFIG={
+  pistol:[2050,'magazine'],smg:[1920,'magazine'],mp5:[2600,'magazine'],
+  carbine:[2340,'magazine'],rifle:[2580,'magazine'],akm:[3150,'magazine'],
+  shotgun:[720,'shell'],vector:[2300,'magazine'],semi556:[2730,'magazine'],
+  semi762:[3100,'magazine'],dmr:[3330,'magazine'],bolt:[3050,'magazine'],heavybolt:[4240,'magazine']
+};
+for(const weapon of Object.values(WEAPONS)){
+  const [time,mode]=RELOAD_CONFIG[weapon.id];
+  weapon.reloadMs=time;weapon.reloadMode=mode;
+}
+
 const EQUIPMENT = [
   { id:'armor', name:'Plaque balistique', level:4, description:'+25 PV maximum en permanence.' },
   { id:'fastreload', name:'Chargeur tactique', level:6, description:'Rechargement 20 % plus rapide.' }

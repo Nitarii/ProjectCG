@@ -1,3 +1,13 @@
+# ProjectCG2 — Correctif v2.7.1
+
+**Important :** corrige le plantage du serveur lorsque les bots calculent un chemin
+(`ReferenceError: NAV_SCRATCH is not defined`). Les buffers de navigation A*
+sont maintenant initialisés correctement, et un test de régression s'assure
+que le défaut ne réapparaisse pas.
+
+Démarrage sur Windows : décompresse ce ZIP en entier puis lance `START_LOCAL.bat`.
+Le serveur doit rester ouvert. Nécessite Node.js LTS.
+
 # ProjectCG2 — Point Control · FPS 3D prototype v3.0.0-alpha
 
 **Développeur : Nitarii**
@@ -5,6 +15,10 @@
 Prototype FPS 3D tactique multijoueur à trois équipes avec serveur WebSocket autoritaire et progression persistante.
 
 
+
+## v3.1 — Recharge, accroupissement, végétation, intérieurs et étages
+
+Voir [documentation FPS3D v3.1](docs/FPS3D_V31.md). Animations de rechargement propres aux 13 armes, fusil à pompe à chargement individuel, accroupissement contrôlé par serveur (Ctrl ou C), végétation instanciée, 320 structures avec portes et 53 bâtiments à étages visitables. Prototype procédural, pas encore simulation physique entièrement 3D.
 
 ## v2.6 — audit performance, réseau et interface modulaire
 
@@ -197,20 +211,18 @@ Le navigateur se connecte directement au serveur externe en WSS et la progressio
 reste enregistrée uniquement sur la machine qui héberge le serveur.
 
 
-## Mise à jour 2.7 — stabilité, réseau et interface
+## Mise à jour — revue et stabilité 2.7
 
-Le jeu utilise désormais quatre fenêtres de menu séparées : **Inventaire/Achats**, **Équipe/Escouade**, **Administration** et **Paramètres**. Sur ordinateur, les panneaux peuvent être déplacés depuis leur barre supérieure. Les paramètres affichent la latence aller-retour serveur et les données en attente d'envoi.
+Le jeu possède quatre fenêtres de menu séparées (Inventaire/Achats, Équipe/Escouade, Administration, Paramètres), repositionnables sur ordinateur. Les paramètres comportent un diagnostic de latence WebSocket.
 
-**Sécurité de l'administration :** le premier joueur connecté n'est plus automatiquement administrateur. Le serveur affiche un **code confidentiel dans sa console** au démarrage. L'hôte le saisit dans le champ facultatif du menu de connexion. Le code peut être fixé en utilisant la variable d'environnement `PROJECTPC_ADMIN_TOKEN`. Ne jamais le publier ni le partager.
+**Sécurité du serveur public :** le premier joueur connecté n'est plus administrateur. Le serveur affiche un **code administrateur privé** dans sa console au lancement ; l'hôte peut saisir ce code dans le champ facultatif de l'écran de connexion. Ne partage pas ce code. Pour garder un secret stable, définis `PROJECTPC_ADMIN_TOKEN` dans l'environnement avant de démarrer le serveur.
 
-Avant publication : `npm run verify` (simulation et tests réseau). Le déploiement GitHub Pages exécute désormais ces tests automatiquement.
+Exécute `npm run verify` avant de publier ; `npm run test:network` exécute les tests réseau spécifiques. Voir [l'audit technique](docs/TECHNICAL_REVIEW_2.7.md) pour les mesures, limites et améliorations.
 
-[Revue technique détaillée, composant par composant](docs/TECHNICAL_REVIEW_2.7.md).
 
 ## Jouer en local (Windows)
 
-Dans le dossier du jeu, double-clique sur **`START_LOCAL.bat`**. Le lanceur vérifie Node.js, démarre le serveur sur `http://127.0.0.1:8080/` et ouvre automatiquement cette adresse dès que le serveur répond. Il n'utilise pas Cloudflare. Garde la console ouverte pendant la partie ; le code administrateur y est affiché. En cas de message « Node.js introuvable », installer la version LTS depuis https://nodejs.org/ .
-
+Installe Node.js LTS, puis double-clique sur `START_LOCAL.bat` dans le dossier principal. Le serveur demarre sur http://127.0.0.1:8080/ et le navigateur s'ouvre automatiquement. Garde la console ouverte pour jouer et recuperer le code administrateur.
 
 
 ## Prototype FPS 3D (3.0-alpha)
