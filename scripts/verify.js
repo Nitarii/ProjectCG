@@ -15,6 +15,7 @@ const checks = [
   ['--check', 'scripts/stress-local.js'],
   ['--check', 'scripts/test-network.js'],
   ['--check', 'public/js/game.js'],
+  ['--check', 'public/js/fps3d.js'],
 ];
 for (const args of checks) {
   const r = spawnSync(process.execPath, args, { cwd: root, stdio: 'inherit' });
