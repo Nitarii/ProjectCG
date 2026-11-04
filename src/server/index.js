@@ -31,8 +31,8 @@ const SQUAD_IDS = ['squad1','squad2','squad3','squad4'];
 const SIM_HZ = 30;
 const SNAPSHOT_HZ = 15; // état réseau à 15 Hz, rendu extrapolé/interpolé côté client à la fréquence écran.
 const AI_HZ = 15;       // décisions bots à 15 Hz, mouvement physique conservé à 30 Hz.
-const REMOTE_PLAYER_RADIUS = 3400; // couvre largement 2x la portée de l'arme la plus longue.
-const SHOT_REPLICATION_RADIUS = 3400;
+const REMOTE_PLAYER_RADIUS = 6400; // couvre largement 2x la portée de l'arme la plus longue.
+const SHOT_REPLICATION_RADIUS = 7000;
 const MAX_SNAPSHOT_BACKLOG = 192 * 1024;
 const MAX_BROADCAST_BACKLOG = 384 * 1024;
 const ALLOWED_ORIGINS = new Set(['https://nitarii.github.io', ...String(process.env.PROJECTPC_ALLOWED_ORIGINS||'').split(',').map(x=>x.trim()).filter(Boolean)]);
@@ -810,9 +810,10 @@ wss.on('connection', ws => {
         }
         p.aiming=p.vehicleId?false:!!msg.aiming;
         if (Number.isFinite(msg.angle)) p.angle=normalizeAngle(msg.angle);
+        p.fpsMode=msg.fps===true;if(p.fpsMode&&Number.isFinite(msg.pitch))p.pitch=Math.max(-1.18,Math.min(1.18,msg.pitch));
         break;
       }
-      case 'fire': if (Number.isFinite(msg.angle)) p.angle=normalizeAngle(msg.angle); tryFire(p, now); break;
+      case 'fire': if (Number.isFinite(msg.angle)) p.angle=normalizeAngle(msg.angle);if(p.fpsMode&&Number.isFinite(msg.pitch))p.pitch=Math.max(-1.18,Math.min(1.18,msg.pitch)); tryFire(p, now); break;
       case 'reload': startReload(p, now); break;
       case 'medical': useMedical(p, now); break;
       case 'respawn': requestRespawn(p, now); break;
@@ -1166,7 +1167,8 @@ function integratePlayer(p,dt,now){
   }else{
     // Contrôles écran : Z/W = haut, S = bas, Q/A = gauche, D = droite malgré la projection isométrique.
     const sx=(p.input.right?1:0)-(p.input.left?1:0),sy=(p.input.down?1:0)-(p.input.up?1:0);
-    dx=sx+sy;dy=-sx+sy;
+    if(p.fpsMode){dx=-sy*Math.cos(p.angle)-sx*Math.sin(p.angle);dy=-sy*Math.sin(p.angle)+sx*Math.cos(p.angle);}
+    else{dx=sx+sy;dy=-sx+sy;}
   }
   const healLocked=(p.healLockUntil||0)>now&&!!p.beingHealedById;if(healLocked){dx=0;dy=0;p.sprinting=false;}
   const moving=!!(dx||dy); if(moving){const len=Math.hypot(dx,dy);dx/=len;dy/=len;if(p.reviveTargetId)cancelRevive(p);}
@@ -1502,7 +1504,7 @@ function tryFire(p,now,extraError=0){
   for(let i=0;i<w.pellets;i++){
     const angle=normalizeAngle(p.angle+randomSpread(spread));const trace=resolveHitscan(p,angle,w,now);
     if(trace.targetId){const hit=players.get(trace.targetId);if(hit&&hit.teamId!==p.teamId)enemyHit=true;}
-    const shot={id:String(nextEventId++),groupId,pelletIndex:i,shooterId:p.id,x:p.x,y:p.y,angle,range:trace.distance,at:now,weaponId:w.id,tracer:!!w.tracer,muzzleVelocity:w.muzzleVelocity||7000};shots.push(shot);firedShots.push(shot);
+    const shot={id:String(nextEventId++),groupId,pelletIndex:i,shooterId:p.id,x:p.x,y:p.y,angle,pitch:p.fpsMode?(p.pitch||0):0,range:trace.distance,at:now,weaponId:w.id,tracer:!!w.tracer,muzzleVelocity:(w.muzzleVelocity||7000)*3};shots.push(shot);firedShots.push(shot);
   }
   // Une seule confirmation par coup, même pour un fusil à pompe qui touche avec plusieurs plombs.
   if(enemyHit)effects.push({id:String(nextEventId++),type:'hit_confirm',shooterId:p.id,at:now});
@@ -1537,14 +1539,48 @@ function friendlyInFireLane(shooter,angle,maxDistance){
   return false;
 }
 function ballisticDamageMultiplier(weapon,distance){
-  const full=Math.max(1,Number(weapon?.range)||1);
+  const full=Math.max(1800,(Number(weapon?.range)||1)*8);
   if(distance<=full)return 1;
-  if(distance>=full*2)return 0;
-  // Après la portée nominale, les dégâts chutent linéairement jusqu'à 0 au double de la portée.
-  return Math.max(0,Math.min(1,2-distance/full));
+  // Effective range is not a maximum projectile distance. Energy decreases continuously.
+  const over=(distance-full)/full;
+  return Math.max(.12,1/(1+.38*over+.08*over*over));
+}
+// Projectiles are bounded by the world, terrain and gravity, never by weapon effective range.
+const WORLD_GRAVITY=327; // World-space scale: 0.03 metres per unit. Gravity = 9.81 m/s².
+function resolveBallistic3D(shooter,angle,weapon,now){
+  const dx=Math.cos(angle),dy=Math.sin(angle),velocity=Math.max(4000,(Number(weapon.muzzleVelocity)||7500)*3);
+  const pitch=Math.max(-1.18,Math.min(1.18,Number(shooter.pitch)||0));
+  const yawScale=Math.max(.38,Math.cos(pitch)),horizontalSpeed=velocity*yawScale;
+  const high=54,range=Math.hypot(MAP.width,MAP.height);
+  const bulletZ=d=>high+Math.tan(pitch)*d-.5*WORLD_GRAVITY*(d/horizontalSpeed)**2;
+  const endGround=(()=>{let lo=0,hi=range;for(let i=0;i<30;i++){const mid=(lo+hi)*.5;if(bulletZ(mid)>0)lo=mid;else hi=mid;}return hi;})();
+  let end=Math.min(range,endGround),target=null,targetVehicle=null,wallHit=false;
+  // First physical impact along the ray, with the actual obstacle height.
+  const candidates=[];
+  for(const o of obstaclesInBounds(Math.min(shooter.x,shooter.x+dx*end),Math.min(shooter.y,shooter.y+dy*end),Math.max(shooter.x,shooter.x+dx*end),Math.max(shooter.y,shooter.y+dy*end))){
+    const d=rayRectDistance(shooter.x,shooter.y,dx,dy,o);
+    if(d>=0&&d<end&&bulletZ(d)>=0&&bulletZ(d)<=o.height)candidates.push({d,kind:'wall'});
+  }
+  for(const p of players.values()){
+    if(!p.alive||p.id===shooter.id)continue;
+    const d=rayCircleDistance(shooter.x,shooter.y,dx,dy,p.x,p.y,p.hitRadius||27);
+    if(d<end&&bulletZ(d)>=2&&bulletZ(d)<=69)candidates.push({d,kind:'player',obj:p});
+  }
+  for(const v of vehicles){
+    if(!v.alive||v.id===shooter.vehicleId)continue;
+    const d=rayCircleDistance(shooter.x,shooter.y,dx,dy,v.x,v.y,v.radius);
+    if(d<end&&bulletZ(d)>=2&&bulletZ(d)<=65)candidates.push({d,kind:'vehicle',obj:v});
+  }
+  candidates.sort((a,b)=>a.d-b.d);
+  const first=candidates[0];if(first){end=first.d;target=first.kind==='player'?first.obj:null;targetVehicle=first.kind==='vehicle'?first.obj:null;wallHit=first.kind==='wall';}
+  const damage=weapon.damage*ballisticDamageMultiplier(weapon,end);
+  if(target)applyDamage(shooter,target,damage,now);
+  else if(targetVehicle)applyVehicleDamage(shooter,targetVehicle,damage,now);
+  return{distance:Math.max(0,end),targetId:target?.id||null,vehicleId:targetVehicle?.id||null,wallHit,damageMultiplier:ballisticDamageMultiplier(weapon,end)};
 }
 function resolveHitscan(shooter,angle,weapon,now){
-  const dx=Math.cos(angle),dy=Math.sin(angle),ballisticRange=Math.max(1,weapon.range)*2;
+  const dx=Math.cos(angle),dy=Math.sin(angle),ballisticRange=Math.hypot(MAP.width,MAP.height);
+  if(shooter.fpsMode)return resolveBallistic3D(shooter,angle,weapon,now);
   const wallDistance=firstObstacleDistance(shooter.x,shooter.y,dx,dy,ballisticRange);
   let target=null,targetVehicle=null,endDistance=Math.min(ballisticRange,wallDistance);
   for(const p of players.values()){
@@ -1786,7 +1822,7 @@ function sendSnapshotTo(ws,viewer,now){
   if(minGap)viewer.netNextCongestedSnapshotAt=now+minGap;
 
   const visiblePlayers=[publicPlayer(viewer,now)],remotePlayers=[],visibleIds=new Set([viewer.id]);
-  const interestRadius=backlog>96*1024?2200:backlog>48*1024?2800:REMOTE_PLAYER_RADIUS;
+  const interestRadius=backlog>96*1024?2600:backlog>48*1024?4100:REMOTE_PLAYER_RADIUS;
   for(const p of nearbyActors(viewer.x,viewer.y,interestRadius))if(p.id!==viewer.id&&snapshotPlayerRelevant(viewer,p)){
     remotePlayers.push(publicRemotePlayerWire(p,now));visibleIds.add(p.id);
   }
@@ -2291,13 +2327,16 @@ function runGeometrySelfTests(){
   const realWall=MAP.obstacles[0],wallViewer={id:'wv',x:realWall.x-500,y:realWall.y+realWall.h/2,angle:0,sprinting:false,radius:24},behindWall={id:'bw',x:realWall.x+realWall.w+120,y:realWall.y+realWall.h/2,radius:24};
   assert(!hasLineOfSight(wallViewer,behindWall));assert(MAP.width*MAP.height>=2400*1600*100);assert(canStandAt(match.objective.x,match.objective.y,110));
 
-  // Balistique v2.3 : dégâts pleins jusqu'à la portée nominale, puis chute linéaire jusqu'à 0 au double.
+  // FPS 3D: no artificial maximum range or zero-damage distance; only energy falloff.
   const testWeapon={range:1000};
-  assert.strictEqual(ballisticDamageMultiplier(testWeapon,500),1,'Damage was reduced before nominal range');
-  assert.strictEqual(ballisticDamageMultiplier(testWeapon,1000),1,'Nominal range must keep full damage');
-  assert(Math.abs(ballisticDamageMultiplier(testWeapon,1500)-.5)<1e-9,'Damage falloff at 1.5x range is incorrect');
-  assert.strictEqual(ballisticDamageMultiplier(testWeapon,2000),0,'Damage must be zero at double range');
-  assert.strictEqual(ballisticDamageMultiplier(testWeapon,2500),0,'Damage must stay zero past double range');
+  assert.strictEqual(ballisticDamageMultiplier(testWeapon,500),1,'Damage was reduced before effective range');
+  assert.strictEqual(ballisticDamageMultiplier(testWeapon,1000),1,'Effective range must keep full damage');
+  assert(ballisticDamageMultiplier(testWeapon,15000)<1&&ballisticDamageMultiplier(testWeapon,15000)>.4,'Damage falloff incorrect');
+  assert(ballisticDamageMultiplier(testWeapon,2000)>0,'Shots must not turn harmless at 2x effective range');
+  assert(ballisticDamageMultiplier(testWeapon,25000)>0,'Shots must not disappear past old maximum range');
+  const testShooter={x:500,y:500,pitch:0,fpsMode:true,id:'test-shooter',teamId:'alpha'};
+  const testTrace=resolveBallistic3D(testShooter,0,{...testWeapon,muzzleVelocity:8000,damage:50},Date.now());
+  assert(testTrace.distance>0&&Number.isFinite(testTrace.distance),'Long-range 3D ray failed');
 
   // Tir allié : balles, frag et flash doivent aussi affecter un membre de la même équipe.
   const ffNow=Date.now(),ffBaseX=match.objective.x,ffBaseY=match.objective.y;
