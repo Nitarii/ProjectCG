@@ -1,4 +1,4 @@
-# ProjectPC — Point Control v2.6
+# ProjectCG2 — Point Control · FPS 3D prototype v3.0.0-alpha
 
 **Développeur : Nitarii**
 
@@ -210,3 +210,11 @@ Avant publication : `npm run verify` (simulation et tests réseau). Le déploiem
 ## Jouer en local (Windows)
 
 Dans le dossier du jeu, double-clique sur **`START_LOCAL.bat`**. Le lanceur vérifie Node.js, démarre le serveur sur `http://127.0.0.1:8080/` et ouvre automatiquement cette adresse dès que le serveur répond. Il n'utilise pas Cloudflare. Garde la console ouverte pendant la partie ; le code administrateur y est affiché. En cas de message « Node.js introuvable », installer la version LTS depuis https://nodejs.org/ .
+
+
+
+## Prototype FPS 3D (3.0-alpha)
+
+Le jeu est jouable à la première personne sur les navigateurs WebGL2. La nouvelle scène 3D remplace la vue isométrique sans supprimer les trois équipes, les bots, les objectifs, les escouades, les achats et la progression. La souris dirige le regard (clique dans le monde pour capturer le pointeur), ZQSD/WASD fait avancer/reculer/strafer. X utilise l’outil. Les projectiles n’ont plus de coupure de portée par arme, mais la gravité et la perte d’énergie s’appliquent.
+
+**Il s’agit d’une base FPS 3D : les éléments 3D sont des modèles géométriques provisoires, pas encore un jeu milsim photoréaliste.** Le serveur conserve actuellement un sol plat et des collisions horizontales. Voir [état et limites de la conversion](docs/FPS3D.md).
